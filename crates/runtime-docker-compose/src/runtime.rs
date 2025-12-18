@@ -203,6 +203,10 @@ impl DockerRuntime {
                 // Add artifacts from spec.artifacts
                 artifacts_to_process.extend(spec.artifacts);
 
+                let config_path = compose_dir.join("_config");
+                std::fs::create_dir_all(&config_path)?;
+                let absolute_config_path = config_path.canonicalize()?;
+
                 // Process all artifacts after args have been hydrated
                 for artifact in artifacts_to_process {
                     match artifact {
@@ -256,62 +260,18 @@ impl DockerRuntime {
                                     Some(DependsOnCondition::ServiceCompletedSuccessfully),
                                 );
                             } else {
-                                let container_path = std::path::Path::new(&target_path);
-                                let volume_mount = std::path::Path::new("/data");
-
-                                // Strip the volume mount prefix to get the relative path
-                                let relative_path = container_path
-                                    .strip_prefix(volume_mount)
-                                    .unwrap_or(std::path::Path::new(""));
-
-                                // Join with the host base path
-                                let target_host_path = absolute_data_path.join(relative_path);
+                                let target_host_path = absolute_config_path.join(name);
                                 if let Some(parent) = target_host_path.parent() {
                                     std::fs::create_dir_all(parent)?;
                                 }
+                                std::fs::write(&target_host_path, content)?;
 
-                                std::fs::write(target_host_path, content)?;
+                                volumes.push(format!(
+                                    "{}:{}",
+                                    target_host_path.display(),
+                                    target_path
+                                ));
                             }
-                        }
-                        spec::Artifacts::Dir(dir) => {
-                            // Write all files from the embedded directory to the host directory
-                            // in the order expected (recursively)
-                            fn write_dir_recursive(
-                                base_path: &std::path::Path,
-                                embedded_dir: &include_dir::Dir,
-                            ) -> eyre::Result<()> {
-                                for entry in embedded_dir.entries() {
-                                    match entry {
-                                        include_dir::DirEntry::Dir(subdir) => {
-                                            let subdir_path = base_path.join(subdir.path());
-                                            std::fs::create_dir_all(&subdir_path)?;
-                                            write_dir_recursive(base_path, subdir)?;
-                                        }
-                                        include_dir::DirEntry::File(file) => {
-                                            let file_path = base_path.join(file.path());
-                                            if let Some(parent) = file_path.parent() {
-                                                std::fs::create_dir_all(parent)?;
-                                            }
-                                            std::fs::write(&file_path, file.contents())?;
-                                        }
-                                    }
-                                }
-                                Ok(())
-                            }
-
-                            let container_path = std::path::Path::new(&dir.path);
-                            let volume_mount = std::path::Path::new("/data");
-
-                            // Strip the volume mount prefix to get the relative path
-                            let relative_path = container_path
-                                .strip_prefix(volume_mount)
-                                .unwrap_or(std::path::Path::new(""));
-
-                            // Join with the host base path
-                            let target_host_path = absolute_data_path.join(relative_path);
-                            std::fs::create_dir_all(&target_host_path)?;
-
-                            write_dir_recursive(&target_host_path, &dir.dir)?;
                         }
                     }
                 }

@@ -75,7 +75,6 @@ impl Manifest {
 #[derive(Debug, Clone)]
 pub enum Artifacts {
     File(File),
-    Dir(Dir),
 }
 
 #[derive(Debug, Clone)]
