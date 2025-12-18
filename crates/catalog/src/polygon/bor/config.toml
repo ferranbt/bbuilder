@@ -1,9 +1,9 @@
-chain = "mainnet"
+chain = "{chain}"
 identity = "5779cd111bca"
 verbosity = 3
 log-level = ""
 vmdebug = false
-datadir = "/data"
+datadir = "{data_dir}"
 ancient = ""
 "db.engine" = "leveldb"
 keystore = ""

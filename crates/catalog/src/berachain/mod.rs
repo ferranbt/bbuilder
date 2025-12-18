@@ -14,7 +14,16 @@ fn bera_chain_file(chain_id: u64, path: &str) -> String {
 pub enum Chains {
     #[default]
     Mainnet,
-    Sepolia,
+    Bepolia,
+}
+
+impl Chains {
+    fn chain_id(&self) -> u64 {
+        match self {
+            Chains::Mainnet => 80094,
+            Chains::Bepolia => 80069,
+        }
+    }
 }
 
 #[derive(Default, Deserialize)]
@@ -82,7 +91,7 @@ impl ComputeResource for BeaconKit {
     }
 
     fn spec(&self, chain: Chains) -> eyre::Result<Pod> {
-        let chain_id = 80069;
+        let chain_id = chain.chain_id();
 
         let config_file = BeaconKitConfigFile {};
         let app_file = BeaconKitAppFile {
@@ -108,11 +117,6 @@ impl ComputeResource for BeaconKit {
                 name: "kzg-trusted-setup".to_string(),
                 target_path: "/data/kzg-trusted-setup.json".to_string(),
                 content: bera_chain_file(chain_id, "kzg-trusted-setup.json"),
-            }))
-            .artifact(Artifacts::File(spec::File {
-                name: "eth-genesis".to_string(),
-                target_path: "/data/eth-genesis.json".to_string(),
-                content: bera_chain_file(chain_id, "eth-genesis.json"),
             }))
             .artifact(Artifacts::File(spec::File {
                 name: "config".to_string(),
@@ -143,10 +147,17 @@ impl ComputeResource for BeraReth {
     }
 
     fn spec(&self, chain: Chains) -> eyre::Result<Pod> {
+        let chain_id = chain.chain_id();
+
         let node = Spec::builder()
             .image("ghcr.io/berachain/bera-reth")
             .tag("v1.3.0")
-            .arg2("--chain", "/data/genesis.json");
+            .arg2("--chain", "/data/genesis.json")
+            .artifact(Artifacts::File(spec::File {
+                name: "eth-genesis".to_string(),
+                target_path: "/data/eth-genesis.json".to_string(),
+                content: bera_chain_file(chain_id, "eth-genesis.json"),
+            }));
 
         Ok(Pod::default().with_spec("reth", node))
     }

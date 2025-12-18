@@ -16,6 +16,22 @@ pub enum Chains {
     Amoy,
 }
 
+impl Chains {
+    fn cosmos_chain_id(&self) -> &str {
+        match self {
+            Chains::Mainnet => "heimdallv2-137",
+            Chains::Amoy => "heimdallv2-80002",
+        }
+    }
+
+    fn name(&self) -> &str {
+        match self {
+            Chains::Mainnet => "mainnet",
+            Chains::Amoy => "amoy",
+        }
+    }
+}
+
 #[derive(Default, Deserialize)]
 pub struct Heimdall {}
 
@@ -50,7 +66,7 @@ impl ComputeResource for Heimdall {
         let app_config = include_str!("heimdall/app.toml");
         let config_config = include_str!("heimdall/config.toml");
         let client_config = HeimdallClientConfigFile {
-            chain: "heimdallv2-137".to_string(),
+            chain: chain.cosmos_chain_id().to_string(),
         };
 
         let keys = generate_tendermint_key();
@@ -195,8 +211,27 @@ fn generate_cometbft_key() -> String {
     serde_json::to_string_pretty(&validator_key).unwrap()
 }
 
+#[derive(Template, Serialize)]
+#[template(path = "bor/config.toml")]
+pub struct BorConfig {
+    chain: String,
+    data_dir: String,
+}
+
 #[derive(Default, Deserialize)]
 pub struct Bor {}
+
+fn bor_genesis(chain: Chains) -> String {
+    let filename = match chain {
+        Chains::Mainnet => "genesis-mainnet-v1",
+        Chains::Amoy => "genesis-testnet-v4.json",
+    };
+
+    format!(
+        "https://raw.githubusercontent.com/0xPolygon/bor/master/builder/files/{}.json",
+        filename
+    )
+}
 
 impl ComputeResource for Bor {
     type Chains = Chains;
@@ -209,7 +244,10 @@ impl ComputeResource for Bor {
     }
 
     fn spec(&self, chain: Chains) -> eyre::Result<Pod> {
-        let config = include_str!("./bor/config.toml");
+        let config = BorConfig {
+            chain: chain.name().to_string(),
+            data_dir: "/data".to_string(),
+        };
 
         let node = Spec::builder()
             .image("0xpolygon/bor")
@@ -219,12 +257,12 @@ impl ComputeResource for Bor {
             .artifact(Artifacts::File(spec::File {
                 name: "config".to_string(),
                 target_path: "/data/config.toml".to_string(),
-                content: config.to_string(),
+                content: config.render(),
             }))
-            .artifact(Artifacts::File(spec::File{
+            .artifact(Artifacts::File(spec::File {
                 name: "genesis.json".to_string(),
                 target_path: "/data/genesis.json".to_string(),
-                content: "https://raw.githubusercontent.com/0xPolygon/bor/master/builder/files/genesis-mainnet-v1.json".to_string(),
+                content: bor_genesis(chain),
             }));
 
         Ok(Pod::default().with_spec("bor", node))
