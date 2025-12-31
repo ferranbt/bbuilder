@@ -5,7 +5,7 @@ use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Keccak256};
 use spec::{
-    Artifacts, Capabilities, ChainSpec, ComputeResource, Deployment, Manifest, Pod, Spec, Volume,
+    Arg, Artifacts, Babel, Capabilities, ChainSpec, ComputeResource, Deployment, Manifest, Pod, Spec, Volume,
 };
 use template::Template;
 
@@ -84,6 +84,13 @@ impl ComputeResource for Heimdall {
             .tag("0.2.16")
             .arg("start")
             .arg2("--home", "/data/heimdall")
+            .arg2(
+                "--api.address",
+                Arg::Port {
+                    name: "http".to_string(),
+                    preferred: 1317,
+                },
+            )
             .artifact(Artifacts::File(spec::File{
                 name: "genesis".to_string(),
                 target_path: "/data/heimdall/config/genesis.json".to_string(),
@@ -297,7 +304,19 @@ impl Deployment for PolygonDeployment {
 
     fn manifest(&self, chain: Chains, input: PolygonDeploymentInput) -> eyre::Result<Manifest> {
         let mut manifest = Manifest::new("polygon".to_string());
-        manifest.add_spec("heimdall".to_string(), input.heimdall.spec(chain.clone())?);
+
+        let mut heimdall_pod = input.heimdall.spec(chain.clone())?;
+        // Add Babel sidecar to Heimdall pod
+        let babel_cosmos = Babel::new(
+            "cosmos",
+            Arg::Ref {
+                name: "heimdall".to_string(),
+                port: "http".to_string(),
+            },
+        );
+        heimdall_pod = heimdall_pod.with_spec("babel", babel_cosmos.spec());
+        manifest.add_spec("heimdall".to_string(), heimdall_pod);
+
         manifest.add_spec("bor".to_string(), input.bor.spec(chain)?);
 
         Ok(manifest)

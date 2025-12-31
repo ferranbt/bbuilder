@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use spec::{Artifacts, Capabilities, ChainSpec, ComputeResource, Deployment, Manifest, Pod, Spec};
+use spec::{Arg, Artifacts, Babel, Capabilities, ChainSpec, ComputeResource, Deployment, Manifest, Pod, Spec};
 use template::Template;
 use tokio::task;
 
@@ -48,11 +48,30 @@ impl Deployment for BerachainDeployment {
 
     fn manifest(&self, chain: Chains, input: BerachainDeploymentInput) -> eyre::Result<Manifest> {
         let mut manifest = Manifest::new("berachain".to_string());
-        manifest.add_spec(
-            "beaconkit".to_string(),
-            input.beacon_kit.spec(chain.clone())?,
+
+        let mut beaconkit_pod = input.beacon_kit.spec(chain.clone())?;
+        // Add Babel sidecar to BeaconKit pod
+        let babel_cosmos = Babel::new(
+            "cosmos",
+            Arg::Ref {
+                name: "beaconkit".to_string(),
+                port: "http".to_string(),
+            },
         );
-        manifest.add_spec("berareth".to_string(), input.bera_reth.spec(chain)?);
+        beaconkit_pod = beaconkit_pod.with_spec("babel", babel_cosmos.spec());
+        manifest.add_spec("beaconkit".to_string(), beaconkit_pod);
+
+        let mut berareth_pod = input.bera_reth.spec(chain)?;
+        // Add Babel sidecar to BeraReth pod
+        let babel_ethereum = Babel::new(
+            "ethereum",
+            Arg::Ref {
+                name: "berareth".to_string(),
+                port: "http".to_string(),
+            },
+        );
+        berareth_pod = berareth_pod.with_spec("babel", babel_ethereum.spec());
+        manifest.add_spec("berareth".to_string(), berareth_pod);
 
         Ok(manifest)
     }
@@ -106,6 +125,13 @@ impl ComputeResource for BeaconKit {
             .tag("v1.3.4-rc1")
             .arg("start")
             .arg2("--home", "/data")
+            .arg2(
+                "--api.address",
+                Arg::Port {
+                    name: "http".to_string(),
+                    preferred: 1317,
+                },
+            )
             .env("EL_BOOTNODES", bootnodes.trim())
             .env("EL_PEERS", peers.trim())
             .artifact(Artifacts::File(spec::File {
@@ -153,6 +179,15 @@ impl ComputeResource for BeraReth {
             .image("ghcr.io/berachain/bera-reth")
             .tag("v1.3.0")
             .arg2("--chain", "/data/genesis.json")
+            .arg2(
+                "--http.port",
+                Arg::Port {
+                    name: "http".to_string(),
+                    preferred: 8545,
+                },
+            )
+            .arg2("--http.addr", "0.0.0.0")
+            .arg("--http")
             .artifact(Artifacts::File(spec::File {
                 name: "eth-genesis".to_string(),
                 target_path: "/data/eth-genesis.json".to_string(),
