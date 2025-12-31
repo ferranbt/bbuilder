@@ -148,29 +148,12 @@ impl DockerRuntime {
         let mut services = HashMap::new();
         let compose_dir = std::path::Path::new(&self.dir_path).join(&manifest.name);
 
-        // First pass: collect all ports from all pods/specs
-        let mut port_registry: HashMap<String, HashMap<String, u16>> = HashMap::new();
         for (pod_name, pod) in &manifest.pods {
             for (spec_name, spec) in &pod.specs {
-                let service_name = format!("{}-{}", pod_name, spec_name);
-                let mut service_ports = HashMap::new();
-
-                for arg in &spec.args {
-                    if let spec::Arg::Port { name, preferred } = arg {
-                        service_ports.insert(name.clone(), *preferred);
-                    }
-                }
-
-                port_registry.insert(service_name, service_ports);
-            }
-        }
-
-        for (pod_name, pod) in manifest.pods {
-            for (spec_name, spec) in pod.specs {
                 let image = format!(
                     "{}:{}",
                     spec.image,
-                    spec.tag.unwrap_or("latest".to_string())
+                    spec.tag.clone().unwrap_or("latest".to_string())
                 );
 
                 let mut ports = vec![];
@@ -191,44 +174,37 @@ impl DockerRuntime {
                     volumes.push(volume_mapping);
                 }
 
-                for (key, value) in spec.env {
-                    environment.insert(key, value);
+                for (key, value) in &spec.env {
+                    environment.insert(key.clone(), value.clone());
                 }
 
-                for arg in spec.args {
+                for arg in &spec.args {
                     let cleaned_arg = match arg {
-                        spec::Arg::Value(value) => Ok(Some(value)),
-                        spec::Arg::Dir { path, .. } => Ok(Some(path)),
+                        spec::Arg::Value(value) => Some(value.clone()),
+                        spec::Arg::Dir { path, .. } => Some(path.clone()),
                         spec::Arg::Port { preferred, .. } => {
                             ports.push(Port {
-                                host: preferred,
-                                container: preferred,
+                                host: *preferred,
+                                container: *preferred,
                             });
-                            Ok(Some(format!("{}", preferred)))
+                            Some(format!("{}", preferred))
                         }
                         spec::Arg::File(file) => {
-                            artifacts_to_process.push(spec::Artifacts::File(file));
-                            Ok(None)
+                            artifacts_to_process.push(spec::Artifacts::File(file.clone()));
+                            None
                         }
                         spec::Arg::Ref { name, port } => {
-                            if let Some(service_ports) = port_registry.get(&name) {
-                                if let Some(port_num) = service_ports.get(&port) {
-                                    Ok(Some(format!("http://{}:{}", name, port_num)))
-                                } else {
-                                    Err(eyre::eyre!("Ref port {} does not exists", port))
-                                }
-                            } else {
-                                Err(eyre::eyre!("Ref name {} does not exists", name))
-                            }
+                            let reference = manifest.resolve_ref(name.clone(), port.clone())?;
+                            Some(reference)
                         }
-                    }?;
+                    };
                     if let Some(cleaned_arg) = cleaned_arg {
                         command.push(cleaned_arg);
                     }
                 }
 
                 // Add artifacts from spec.artifacts
-                artifacts_to_process.extend(spec.artifacts);
+                artifacts_to_process.extend(spec.artifacts.clone());
 
                 let config_path = compose_dir.join("_config");
                 std::fs::create_dir_all(&config_path)?;
@@ -295,12 +271,12 @@ impl DockerRuntime {
                     }
                 }
 
-                let mut labels = spec.labels;
+                let mut labels = spec.labels.clone();
                 labels.insert("bbuilder".to_string(), "true".to_string());
 
                 let service = DockerComposeService {
                     command,
-                    entrypoint: spec.entrypoint,
+                    entrypoint: spec.entrypoint.clone(),
                     environment,
                     image,
                     labels,

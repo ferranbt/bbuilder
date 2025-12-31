@@ -70,6 +70,30 @@ impl Manifest {
     pub fn add_spec(&mut self, name: String, pod: Pod) {
         self.pods.insert(name, pod);
     }
+
+    pub fn resolve_ref(&self, name: String, port: String) -> eyre::Result<String> {
+        for (pod_name, pod) in &self.pods {
+            for (spec_name, spec) in &pod.specs {
+                let service_name = format!("{}-{}", pod_name, spec_name);
+
+                if name == service_name {
+                    // resolve the port
+                    for spec_port in &spec.ports {
+                        if spec_port.name == port {
+                            return Ok(format!("http://{}:{}", service_name, spec_port.port));
+                        }
+                    }
+                    return Err(eyre::eyre!(
+                        "Port '{}' not found in service '{}'",
+                        port,
+                        service_name
+                    ));
+                }
+            }
+        }
+
+        Err(eyre::eyre!("Service '{}' not found", name))
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -170,6 +194,12 @@ impl Pod {
 }
 
 #[derive(Default, Debug, Clone)]
+pub struct Port {
+    pub port: u16,
+    pub name: String,
+}
+
+#[derive(Default, Debug, Clone)]
 pub struct Spec {
     pub image: String,
     pub tag: Option<String>,
@@ -178,6 +208,7 @@ pub struct Spec {
     pub labels: HashMap<String, String>,
     pub env: HashMap<String, String>,
     pub artifacts: Vec<Artifacts>,
+    pub ports: Vec<Port>,
     pub volumes: HashMap<String, Volume>,
 }
 
@@ -190,6 +221,7 @@ pub struct SpecBuilder {
     entrypoint: Vec<String>,
     labels: HashMap<String, String>,
     artifacts: Vec<Artifacts>,
+    ports: Vec<Port>,
     volumes: HashMap<String, Volume>,
 }
 
@@ -267,7 +299,23 @@ impl SpecBuilder {
         self
     }
 
+    pub fn port(mut self, port: Port) -> Self {
+        self.ports.push(port);
+        self
+    }
+
     pub fn build(self) -> Spec {
+        let mut ports = self.ports;
+
+        for arg in &self.args {
+            if let Arg::Port { name, preferred } = arg {
+                ports.push(Port {
+                    port: *preferred,
+                    name: name.clone(),
+                });
+            }
+        }
+
         Spec {
             image: self.image.unwrap(),
             tag: self.tag,
@@ -276,6 +324,7 @@ impl SpecBuilder {
             labels: self.labels,
             env: self.env,
             artifacts: self.artifacts,
+            ports: ports,
             volumes: self.volumes,
         }
     }
@@ -309,5 +358,52 @@ impl Babel {
             .arg2("--rpc-url", self.rpc_url)
             .arg2("--addr", "0.0.0.0:3000")
             .build()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_arg_port_populates_ports() {
+        let spec = Spec::builder()
+            .image("test-image")
+            .arg(Arg::Port {
+                name: "http".to_string(),
+                preferred: 8080,
+            })
+            .arg(Arg::Port {
+                name: "grpc".to_string(),
+                preferred: 9090,
+            })
+            .build();
+
+        assert_eq!(spec.ports.len(), 2);
+        assert_eq!(spec.ports[0].name, "http");
+        assert_eq!(spec.ports[0].port, 8080);
+        assert_eq!(spec.ports[1].name, "grpc");
+        assert_eq!(spec.ports[1].port, 9090);
+    }
+
+    #[test]
+    fn test_arg_port_with_existing_ports() {
+        let spec = Spec::builder()
+            .image("test-image")
+            .port(Port {
+                port: 3000,
+                name: "api".to_string(),
+            })
+            .arg(Arg::Port {
+                name: "http".to_string(),
+                preferred: 8080,
+            })
+            .build();
+
+        assert_eq!(spec.ports.len(), 2);
+        assert_eq!(spec.ports[0].name, "api");
+        assert_eq!(spec.ports[0].port, 3000);
+        assert_eq!(spec.ports[1].name, "http");
+        assert_eq!(spec.ports[1].port, 8080);
     }
 }
