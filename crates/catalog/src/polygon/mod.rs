@@ -5,7 +5,8 @@ use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Keccak256};
 use spec::{
-    Arg, Artifacts, Babel, Capabilities, ChainSpec, ComputeResource, Deployment, Manifest, Pod, Spec, Volume,
+    Arg, Artifacts, Babel, Capabilities, ChainSpec, ComputeResource, Deployment, Manifest, Pod,
+    Spec, Volume,
 };
 use template::Template;
 
@@ -310,7 +311,7 @@ impl Deployment for PolygonDeployment {
         let babel_cosmos = Babel::new(
             "cosmos",
             Arg::Ref {
-                name: "heimdall".to_string(),
+                name: "heimdall-node".to_string(),
                 port: "http".to_string(),
             },
         );
