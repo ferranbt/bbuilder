@@ -19,3 +19,18 @@ jobs:
           toolchain: stable
       - name: Run tests
         run: cargo test --lib
+
+  test-catalog-examples:
+    name: Test example inputs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+      - name: Test Berachain example
+        run: cargo run --package bbuilder examples/input_berachain.json
+      - name: Test Polygon example
+        run: cargo run --package bbuilder examples/input_polygon.json
+      - name: Test Ethereum example
+        run: cargo run --package bbuilder examples/input_ethereum.json
