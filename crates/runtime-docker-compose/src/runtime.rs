@@ -150,9 +150,9 @@ impl DockerRuntime {
 
         // First pass: collect all ports from all pods/specs
         let mut port_registry: HashMap<String, HashMap<String, u16>> = HashMap::new();
-        for (_, pod) in &manifest.pods {
+        for (pod_name, pod) in &manifest.pods {
             for (spec_name, spec) in &pod.specs {
-                let service_name = spec_name.clone();
+                let service_name = format!("{}-{}", pod_name, spec_name);
                 let mut service_ports = HashMap::new();
 
                 for arg in &spec.args {
@@ -167,11 +167,6 @@ impl DockerRuntime {
 
         for (pod_name, pod) in manifest.pods {
             for (spec_name, spec) in pod.specs {
-                if spec.image == "babel" {
-                    // TODO: Babel skipped for now until the image is published
-                    continue;
-                }
-
                 let image = format!(
                     "{}:{}",
                     spec.image,

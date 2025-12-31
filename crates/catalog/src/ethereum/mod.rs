@@ -48,7 +48,7 @@ impl Deployment for EthereumDeployment {
         let babel_el = Babel::new(
             "ethereum",
             Arg::Ref {
-                name: "el".to_string(),
+                name: "el-node".to_string(),
                 port: "http".to_string(),
             },
         );
@@ -64,7 +64,7 @@ impl Deployment for EthereumDeployment {
         let babel_beacon = Babel::new(
             "ethereum_beacon",
             Arg::Ref {
-                name: "cl".to_string(),
+                name: "cl-node".to_string(),
                 port: "http".to_string(),
             },
         );
@@ -193,7 +193,7 @@ impl ComputeResource for Lighthouse {
             .arg2(
                 "--execution-endpoint",
                 Arg::Ref {
-                    name: "el".to_string(),
+                    name: "el-node".to_string(),
                     port: "authrpc".to_string(),
                 },
             )
@@ -251,7 +251,7 @@ impl ComputeResource for Prysm {
             .arg2(
                 "--execution-endpoint",
                 Arg::Ref {
-                    name: "el".to_string(),
+                    name: "el-node".to_string(),
                     port: "authrpc".to_string(),
                 },
             )

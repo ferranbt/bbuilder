@@ -303,7 +303,7 @@ impl Babel {
 
     pub fn spec(self) -> Spec {
         Spec::builder()
-            .image("babel")
+            .image("ghcr.io/ferranbt/bbuilder/babel")
             .tag("latest")
             .arg2("--node-type", self.node_type)
             .arg2("--rpc-url", self.rpc_url)

@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
-use spec::{Arg, Artifacts, Babel, Capabilities, ChainSpec, ComputeResource, Deployment, Manifest, Pod, Spec};
+use spec::{
+    Arg, Artifacts, Babel, Capabilities, ChainSpec, ComputeResource, Deployment, Manifest, Pod,
+    Spec,
+};
 use template::Template;
 use tokio::task;
 
@@ -54,7 +57,7 @@ impl Deployment for BerachainDeployment {
         let babel_cosmos = Babel::new(
             "cosmos",
             Arg::Ref {
-                name: "beaconkit".to_string(),
+                name: "beaconkit-node".to_string(),
                 port: "http".to_string(),
             },
         );
@@ -66,7 +69,7 @@ impl Deployment for BerachainDeployment {
         let babel_ethereum = Babel::new(
             "ethereum",
             Arg::Ref {
-                name: "berareth".to_string(),
+                name: "berareth-reth".to_string(),
                 port: "http".to_string(),
             },
         );
