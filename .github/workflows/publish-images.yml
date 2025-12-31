@@ -1,0 +1,59 @@
+name: Publish Docker Images
+
+on:
+  push:
+    tags:
+      - 'babel-v*'
+      - 'fetcher-v*'
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Determine service and version
+        id: service
+        run: |
+          if [[ $GITHUB_REF == refs/tags/babel-v* ]]; then
+            echo "name=babel" >> $GITHUB_OUTPUT
+            echo "version=${GITHUB_REF#refs/tags/babel-v}" >> $GITHUB_OUTPUT
+          elif [[ $GITHUB_REF == refs/tags/fetcher-v* ]]; then
+            echo "name=fetcher" >> $GITHUB_OUTPUT
+            echo "version=${GITHUB_REF#refs/tags/fetcher-v}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository }}/${{ steps.service.outputs.name }}
+          tags: |
+            type=semver,pattern={{version}},value=${{ steps.service.outputs.version }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ steps.service.outputs.version }}
+            type=raw,value=latest
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: crates/${{ steps.service.outputs.name }}/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
