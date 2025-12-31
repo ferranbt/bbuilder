@@ -263,16 +263,8 @@ impl DockerRuntime {
 
                                 // Create init container service
                                 let init_service = DockerComposeService {
-                                    image: "curlimages/curl:latest".to_string(),
-                                    command: vec![
-                                        "sh".to_string(),
-                                        "-c".to_string(),
-                                        format!(
-                                            "mkdir -p $(dirname {}) && curl -L -o {} {}",
-                                            download_path, download_path, content
-                                        ),
-                                    ],
-
+                                    image: "ghcr.io/ferranbt/bbuilder/fetcher:latest".to_string(),
+                                    command: vec![content, download_path],
                                     volumes: vec![format!(
                                         "{}:{}",
                                         absolute_data_path.display(),
