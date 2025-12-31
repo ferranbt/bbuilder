@@ -10,7 +10,7 @@ FROM base AS planner
 # Copy the entire workspace
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
-RUN cargo chef prepare --recipe-path recipe.json --bin fetcher
+RUN cargo chef prepare --recipe-path recipe.json --bin babel
 
 # Builder stage - build dependencies then app
 FROM base AS builder
@@ -26,7 +26,7 @@ COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
-    cargo build --release --bin fetcher
+    cargo build --release --bin babel
 
 # Runtime stage
 FROM debian:bookworm-slim
@@ -37,7 +37,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # Copy the binary from builder
-COPY --from=builder /app/target/release/fetcher /usr/local/bin/fetcher
+COPY --from=builder /app/target/release/babel /usr/local/bin/babel
 
 # Set the entrypoint
-ENTRYPOINT ["/usr/local/bin/fetcher"]
+ENTRYPOINT ["/usr/local/bin/babel"]

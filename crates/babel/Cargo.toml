@@ -1,0 +1,28 @@
+[package]
+name = "babel"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "babel"
+path = "bin/main.rs"
+
+[dependencies]
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+eyre = { workspace = true }
+async-trait = { workspace = true }
+
+# HTTP server
+axum = "0.8"
+tower = "0.5"
+tower-http = { version = "0.6", features = ["trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# CLI
+clap = { workspace = true, features = ["derive"] }
+
+# HTTP client for RPC calls
+reqwest = { workspace = true, features = ["json"] }
