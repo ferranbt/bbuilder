@@ -286,3 +286,28 @@ impl Into<Spec> for SpecBuilder {
         self.build()
     }
 }
+
+#[derive(Debug, Clone)]
+pub struct Babel {
+    pub node_type: String,
+    pub rpc_url: Arg,
+}
+
+impl Babel {
+    pub fn new(node_type: impl Into<String>, rpc_url: impl Into<Arg>) -> Self {
+        Self {
+            node_type: node_type.into(),
+            rpc_url: rpc_url.into(),
+        }
+    }
+
+    pub fn spec(self) -> Spec {
+        Spec::builder()
+            .image("babel")
+            .tag("latest")
+            .arg2("--node-type", self.node_type)
+            .arg2("--rpc-url", self.rpc_url)
+            .arg2("--addr", "0.0.0.0:3000")
+            .build()
+    }
+}
