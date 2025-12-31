@@ -165,8 +165,6 @@ impl DockerRuntime {
             }
         }
 
-        println!("XXX {:?}", port_registry);
-
         for (pod_name, pod) in manifest.pods {
             for (spec_name, spec) in pod.specs {
                 let image = format!(
