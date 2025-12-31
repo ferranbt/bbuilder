@@ -3,8 +3,8 @@ name: Publish Docker Images
 on:
   push:
     tags:
-      - 'vbabel-*'
-      - 'vfetcher-*'
+      - 'babel-v*'
+      - 'fetcher-v*'
 
 env:
   REGISTRY: ghcr.io
@@ -24,12 +24,12 @@ jobs:
       - name: Determine service and version
         id: service
         run: |
-          if [[ $GITHUB_REF == refs/tags/vbabel-* ]]; then
+          if [[ $GITHUB_REF == refs/tags/babel-v* ]]; then
             echo "name=babel" >> $GITHUB_OUTPUT
-            echo "version=${GITHUB_REF#refs/tags/vbabel-}" >> $GITHUB_OUTPUT
-          elif [[ $GITHUB_REF == refs/tags/vfetcher-* ]]; then
+            echo "version=${GITHUB_REF#refs/tags/babel-v}" >> $GITHUB_OUTPUT
+          elif [[ $GITHUB_REF == refs/tags/fetcher-v* ]]; then
             echo "name=fetcher" >> $GITHUB_OUTPUT
-            echo "version=${GITHUB_REF#refs/tags/vfetcher-}" >> $GITHUB_OUTPUT
+            echo "version=${GITHUB_REF#refs/tags/fetcher-v}" >> $GITHUB_OUTPUT
           fi
 
       - name: Log in to the Container registry
