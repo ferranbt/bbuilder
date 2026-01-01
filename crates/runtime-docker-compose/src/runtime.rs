@@ -274,6 +274,10 @@ impl DockerRuntime {
                 let mut labels = spec.labels.clone();
                 labels.insert("bbuilder".to_string(), "true".to_string());
 
+                if let Some(metrics_port) = spec.ports.iter().find(|port| port.name == "metrics") {
+                    labels.insert("metrics".to_string(), format!("{}", metrics_port.port));
+                }
+
                 let service = DockerComposeService {
                     command,
                     entrypoint: spec.entrypoint.clone(),

@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use spec::{
     Arg, Artifacts, Babel, Capabilities, ChainSpec, ComputeResource, DEFAULT_JWT_TOKEN, Deployment,
-    Manifest, Pod, Spec, Volume,
+    Manifest, Pod, Port, Spec, Volume,
 };
 
 #[derive(Default, Clone)]
@@ -136,7 +136,12 @@ impl ComputeResource for Reth {
             )
             .arg2("--http.addr", "0.0.0.0")
             .arg("--http")
+            .arg2("--metrics", "0.0.0.0:9090")
             .arg2("--datadir", "/data")
+            .port(Port {
+                port: 9090,
+                name: "metrics".to_string(),
+            })
             .artifact(Artifacts::File(spec::File {
                 name: "jwt".to_string(),
                 target_path: "/data/jwt_secret".to_string(),
@@ -262,6 +267,14 @@ impl ComputeResource for Prysm {
                 Arg::Port {
                     name: "http".to_string(),
                     preferred: 5052,
+                },
+            )
+            .arg2("--monitoring-host", "0.0.0.0")
+            .arg2(
+                "--monitoring-port",
+                Arg::Port {
+                    name: "metrics".to_string(),
+                    preferred: 8080,
                 },
             )
             .arg("--accept-terms-of-use")
