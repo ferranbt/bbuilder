@@ -32,7 +32,7 @@ async fn main() -> eyre::Result<()> {
 
     match cli.node_type.as_str() {
         "ethereum" => {
-            let babel = EthereumBabel::new(cli.rpc_url);
+            let babel = EthereumBabel::new(cli.rpc_url).await?;
             let server = BabelServer::new(babel);
             server.serve(&cli.addr).await?;
         }

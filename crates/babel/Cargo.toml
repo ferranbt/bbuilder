@@ -26,3 +26,13 @@ clap = { workspace = true, features = ["derive"] }
 
 # HTTP client for RPC calls
 reqwest = { workspace = true, features = ["json"] }
+
+# Ethereum provider
+alloy-provider = { version = "0.8", features = ["reqwest", "net-api"] }
+alloy-transport = "0.8"
+alloy-rpc-types-eth = "0.8"
+
+# Metrics
+metrics = "0.24"
+metrics-derive = { git = "https://github.com/ithacaxyz/metrics-derive" }
+metrics-exporter-prometheus = "0.16"
