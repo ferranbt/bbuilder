@@ -84,7 +84,7 @@ where
 
 #[derive(Debug)]
 struct Port {
-    host: u16,
+    host: Option<u16>,
     container: u16,
 }
 
@@ -93,8 +93,12 @@ impl Serialize for Port {
     where
         S: Serializer,
     {
-        // Docker Compose ports format: "host:container" or extended format
-        let port_mapping = format!("{}:{}", self.host, self.container);
+        let port_mapping = if let Some(host) = self.host {
+            // Docker Compose ports format: "host:container" or extended format
+            format!("{}:{}", host, self.container)
+        } else {
+            format!("{}", self.container)
+        };
 
         // For simple format, just serialize as string
         port_mapping.serialize(serializer)
@@ -181,7 +185,7 @@ impl DockerRuntime {
 
                 for port in &spec.ports {
                     ports.push(Port {
-                        host: port.port,
+                        host: None,
                         container: port.port,
                     });
                 }
