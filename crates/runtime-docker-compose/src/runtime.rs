@@ -82,6 +82,7 @@ where
     map_serializer.end()
 }
 
+#[derive(Debug)]
 struct Port {
     host: u16,
     container: u16,
@@ -178,17 +179,18 @@ impl DockerRuntime {
                     environment.insert(key.clone(), value.clone());
                 }
 
+                for port in &spec.ports {
+                    ports.push(Port {
+                        host: port.port,
+                        container: port.port,
+                    });
+                }
+
                 for arg in &spec.args {
                     let cleaned_arg = match arg {
                         spec::Arg::Value(value) => Some(value.clone()),
                         spec::Arg::Dir { path, .. } => Some(path.clone()),
-                        spec::Arg::Port { preferred, .. } => {
-                            ports.push(Port {
-                                host: *preferred,
-                                container: *preferred,
-                            });
-                            Some(format!("{}", preferred))
-                        }
+                        spec::Arg::Port { preferred, .. } => Some(format!("{}", preferred)),
                         spec::Arg::File(file) => {
                             artifacts_to_process.push(spec::Artifacts::File(file.clone()));
                             None
@@ -406,6 +408,7 @@ mod tests {
         let docker_compose = runtime.convert_to_docker_compose_spec(manifest).unwrap();
         let service = docker_compose.services.get("pod-service").unwrap();
 
+        assert_eq!(service.ports.len(), 1, "Port not found");
         assert_eq!(
             service.command,
             ["8545"],
