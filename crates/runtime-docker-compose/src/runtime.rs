@@ -4,6 +4,9 @@ use futures_util::stream::StreamExt;
 use serde::ser::SerializeMap;
 use serde::{Serialize, Serializer};
 use std::collections::HashMap;
+use std::collections::HashSet;
+use std::net::TcpListener;
+use std::sync::{Arc, Mutex};
 
 use runtime_trait::Runtime;
 use spec::{File, Manifest};
@@ -105,8 +108,51 @@ impl Serialize for Port {
     }
 }
 
+#[derive(Clone)]
+struct ReservedPorts {
+    reserved: Arc<Mutex<HashSet<u16>>>,
+}
+
+impl ReservedPorts {
+    fn new() -> Self {
+        Self {
+            reserved: Arc::new(Mutex::new(HashSet::new())),
+        }
+    }
+
+    fn reserve_port(&self, preferred: u16) -> Option<u16> {
+        let mut reserved = self.reserved.lock().unwrap();
+
+        let mut port = preferred;
+        loop {
+            // Check if port is already reserved
+            if reserved.contains(&port) {
+                port += 1;
+                if port == 0 {
+                    // Wrapped around
+                    return None;
+                }
+                continue;
+            }
+
+            // Try to bind to the port to check availability
+            if TcpListener::bind(format!("127.0.0.1:{}", port)).is_ok() {
+                reserved.insert(port);
+                return Some(port);
+            }
+
+            port += 1;
+            if port == 0 {
+                // Wrapped around
+                return None;
+            }
+        }
+    }
+}
+
 pub struct DockerRuntime {
     dir_path: String,
+    reserved_ports: ReservedPorts,
 }
 
 impl DockerRuntime {
@@ -143,7 +189,10 @@ impl DockerRuntime {
             }
         });
 
-        Self { dir_path }
+        Self {
+            dir_path,
+            reserved_ports: ReservedPorts::new(),
+        }
     }
 
     fn convert_to_docker_compose_spec(
@@ -184,8 +233,9 @@ impl DockerRuntime {
                 }
 
                 for port in &spec.ports {
+                    let host_port = self.reserved_ports.reserve_port(port.port);
                     ports.push(Port {
-                        host: None,
+                        host: host_port,
                         container: port.port,
                     });
                 }
@@ -420,5 +470,22 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_reserved_ports() {
+        let reserved_ports = ReservedPorts::new();
+
+        // Reserve a port
+        let port1 = reserved_ports.reserve_port(8545);
+        assert_eq!(port1, Some(8545));
+
+        // Try to reserve the same port again, should get 8546
+        let port2 = reserved_ports.reserve_port(8545);
+        assert_eq!(port2, Some(8546));
+
+        // Reserve another port
+        let port3 = reserved_ports.reserve_port(8545);
+        assert_eq!(port3, Some(8547));
     }
 }
