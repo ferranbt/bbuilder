@@ -357,6 +357,10 @@ impl Babel {
             .arg2("--node-type", self.node_type)
             .arg2("--rpc-url", self.rpc_url)
             .arg2("--addr", "0.0.0.0:3000")
+            .port(Port {
+                port: 3000,
+                name: "metrics".to_string(),
+            })
             .build()
     }
 }
