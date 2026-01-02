@@ -280,23 +280,10 @@ impl DockerRuntime {
                                 let init_service_name =
                                     format!("{}-{}-init-{}", pod_name, spec_name, name);
 
-                                // Resolve the target path within the mounted volume
-                                // target_path might be something like "/data/heimdall/genesis.json"
-                                // We need to strip the volume mount prefix and get the path relative to /data
-                                let container_target = std::path::Path::new(&target_path);
-                                let volume_mount = std::path::Path::new("/data");
-
-                                let relative_target = container_target
-                                    .strip_prefix(volume_mount)
-                                    .unwrap_or(container_target);
-
-                                // The path inside the container after mounting absolute_data_path to /data
-                                let download_path = format!("/data/{}", relative_target.display());
-
                                 // Create init container service
                                 let init_service = DockerComposeService {
                                     image: "ghcr.io/ferranbt/bbuilder/fetcher:latest".to_string(),
-                                    command: vec![content, download_path],
+                                    command: vec![content, target_path],
                                     volumes: vec![format!(
                                         "{}:{}",
                                         absolute_data_path.display(),
