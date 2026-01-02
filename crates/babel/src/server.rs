@@ -55,7 +55,10 @@ impl BabelServer {
             Self::status_polling_loop(state).await;
         });
 
-        axum::serve(listener, self.router()).await?;
+        // Serve with graceful shutdown
+        axum::serve(listener, self.router())
+            .with_graceful_shutdown(shutdown_signal())
+            .await?;
 
         Ok(())
     }
@@ -116,5 +119,35 @@ where
 {
     fn from(err: E) -> Self {
         Self(err.into())
+    }
+}
+
+async fn shutdown_signal() {
+    use tokio::signal;
+
+    let ctrl_c = async {
+        signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        signal::unix::signal(signal::unix::SignalKind::terminate())
+            .expect("failed to install signal handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {
+            tracing::info!("Received Ctrl+C, shutting down gracefully");
+        },
+        _ = terminate => {
+            tracing::info!("Received SIGTERM, shutting down gracefully");
+        },
     }
 }
