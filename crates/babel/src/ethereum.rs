@@ -1,57 +1,50 @@
-use crate::Babel;
+use crate::{Babel, Status};
+use alloy_provider::ext::NetApi;
+use alloy_provider::{Provider, ProviderBuilder, RootProvider};
+use alloy_rpc_types_eth::SyncStatus;
+use alloy_transport::BoxTransport;
 use async_trait::async_trait;
-use serde_json::json;
 
 /// Ethereum node implementation (supports execution layer clients like Geth, Reth, etc.)
 pub struct EthereumBabel {
-    rpc_url: String,
-    client: reqwest::Client,
+    provider: RootProvider<BoxTransport>,
 }
 
 impl EthereumBabel {
-    pub fn new(rpc_url: String) -> Self {
-        Self {
-            rpc_url,
-            client: reqwest::Client::new(),
-        }
-    }
+    pub async fn new(rpc_url: String) -> eyre::Result<Self> {
+        let provider: alloy_provider::RootProvider<alloy_transport::BoxTransport> =
+            ProviderBuilder::new()
+                .on_builtin(&rpc_url)
+                .await
+                .map_err(|e| eyre::eyre!("Failed to create provider: {}", e))?;
 
-    async fn rpc_call(&self, method: &str, params: serde_json::Value) -> eyre::Result<serde_json::Value> {
-        let response = self.client
-            .post(&self.rpc_url)
-            .json(&json!({
-                "jsonrpc": "2.0",
-                "method": method,
-                "params": params,
-                "id": 1
-            }))
-            .send()
-            .await?;
-
-        let json: serde_json::Value = response.json().await?;
-
-        if let Some(error) = json.get("error") {
-            return Err(eyre::eyre!("RPC error: {}", error));
-        }
-
-        json.get("result")
-            .cloned()
-            .ok_or_else(|| eyre::eyre!("No result in RPC response"))
+        Ok(Self { provider: provider })
     }
 }
 
 #[async_trait]
 impl Babel for EthereumBabel {
-    async fn peer_count(&self) -> eyre::Result<u64> {
-        let result = self.rpc_call("net_peerCount", json!([])).await?;
+    async fn status(&self) -> eyre::Result<Status> {
+        let peers = self.provider.net_peer_count().await?;
 
-        // Result is a hex string like "0x19"
-        let hex_str = result.as_str()
-            .ok_or_else(|| eyre::eyre!("Expected string result"))?;
+        let (current_block_number, is_syncing, latest_block_number) =
+            match self.provider.syncing().await? {
+                SyncStatus::Info(sync_status) => (
+                    sync_status.current_block.to::<u64>(),
+                    false,
+                    Some(sync_status.highest_block.to::<u64>()),
+                ),
+                SyncStatus::None => {
+                    let block_num = self.provider.get_block_number().await?;
+                    (block_num, true, None)
+                }
+            };
 
-        // Remove "0x" prefix and parse
-        let count = u64::from_str_radix(hex_str.trim_start_matches("0x"), 16)?;
-
-        Ok(count)
+        Ok(Status {
+            peers,
+            current_block_number,
+            is_syncing,
+            latest_block_number,
+        })
     }
 }

@@ -4,27 +4,25 @@ use serde::{Deserialize, Serialize};
 /// Core trait for blockchain node health checks
 #[async_trait]
 pub trait Babel: Send + Sync {
-    /// Get the number of connected peers for this node
-    async fn peer_count(&self) -> eyre::Result<u64>;
-
-    /// Get comprehensive health status
-    async fn health_status(&self) -> eyre::Result<HealthStatus> {
-        Ok(HealthStatus {
-            peers: self.peer_count().await?,
-        })
-    }
+    /// Get comprehensive status
+    async fn status(&self) -> eyre::Result<Status>;
 }
 
-/// Health status response
+/// Status response
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HealthStatus {
+pub struct Status {
     pub peers: u64,
+    pub current_block_number: u64,
+    pub is_syncing: bool,
+    pub latest_block_number: Option<u64>,
 }
 
 pub mod cosmos;
 pub mod ethereum;
 pub mod ethereum_beacon;
+pub mod metrics;
 pub mod server;
+mod utils;
 
 pub use cosmos::CosmosBabel;
 pub use ethereum::EthereumBabel;

@@ -20,7 +20,9 @@ struct Cli {
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .init();
 
     let cli = Cli::parse();
 
@@ -32,7 +34,7 @@ async fn main() -> eyre::Result<()> {
 
     match cli.node_type.as_str() {
         "ethereum" => {
-            let babel = EthereumBabel::new(cli.rpc_url);
+            let babel = EthereumBabel::new(cli.rpc_url).await?;
             let server = BabelServer::new(babel);
             server.serve(&cli.addr).await?;
         }
