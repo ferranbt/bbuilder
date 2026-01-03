@@ -9,12 +9,14 @@ pub trait Babel: Send + Sync {
 }
 
 /// Status response
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Status {
     pub peers: u64,
     pub current_block_number: u64,
     pub is_syncing: bool,
     pub latest_block_number: Option<u64>,
+    pub is_ready: bool,
+    pub is_healthy: bool,
 }
 
 pub mod cosmos;

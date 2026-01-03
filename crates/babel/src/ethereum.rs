@@ -45,6 +45,8 @@ impl Babel for EthereumBabel {
             current_block_number,
             is_syncing,
             latest_block_number,
+            is_ready: peers > 0 && !is_syncing,
+            is_healthy: true,
         })
     }
 }

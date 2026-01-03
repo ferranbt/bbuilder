@@ -38,3 +38,6 @@ alloy-rpc-types-eth = "0.8"
 metrics = "0.24"
 metrics-derive = { git = "https://github.com/ithacaxyz/metrics-derive" }
 metrics-exporter-prometheus = "0.16"
+
+[dev-dependencies]
+axum-test = "18"

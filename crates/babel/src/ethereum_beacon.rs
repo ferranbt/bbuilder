@@ -71,6 +71,8 @@ impl Babel for EthereumBeaconBabel {
             current_block_number: syncing_info.head_slot,
             is_syncing: latest_block_number.is_some(),
             latest_block_number,
+            is_ready: peers > 0 && latest_block_number.is_none(),
+            is_healthy: true,
         })
     }
 }
