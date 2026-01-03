@@ -1,8 +1,6 @@
 use bollard::Docker;
 use bollard::query_parameters::EventsOptionsBuilder;
 use futures_util::stream::StreamExt;
-use serde::ser::SerializeMap;
-use serde::{Serialize, Serializer};
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::net::TcpListener;
@@ -11,141 +9,9 @@ use std::sync::{Arc, Mutex};
 use runtime_trait::Runtime;
 use spec::{File, Manifest};
 
-#[derive(Serialize)]
-struct DockerComposeSpec {
-    services: HashMap<String, DockerComposeService>,
-
-    #[serde(skip_serializing_if = "HashMap::is_empty")]
-    networks: HashMap<String, Option<Network>>,
-
-    #[serde(skip_serializing_if = "HashMap::is_empty")]
-    volumes: HashMap<String, Option<Volume>>,
-}
-
-#[derive(Serialize, Default)]
-struct DockerComposeService {
-    image: String,
-
-    command: Vec<String>,
-
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    entrypoint: Vec<String>,
-
-    #[serde(skip_serializing_if = "HashMap::is_empty")]
-    labels: HashMap<String, String>,
-
-    #[serde(skip_serializing_if = "HashMap::is_empty")]
-    environment: HashMap<String, String>,
-
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    ports: Vec<Port>,
-
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    networks: Vec<String>,
-
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    #[serde(serialize_with = "serialize_service_volume")]
-    volumes: Vec<ServiceVolume>,
-
-    #[serde(skip_serializing_if = "HashMap::is_empty")]
-    #[serde(serialize_with = "serialize_depends_on")]
-    depends_on: HashMap<String, Option<DependsOnCondition>>,
-}
-
-#[derive(Default)]
-struct ServiceVolume {
-    pub host: String,
-    pub target: String,
-}
-
-#[derive(Serialize, Default)]
-struct Volume {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    driver: Option<String>,
-
-    #[serde(skip_serializing_if = "HashMap::is_empty")]
-    driver_opts: HashMap<String, String>,
-
-    #[serde(skip_serializing_if = "HashMap::is_empty")]
-    labels: HashMap<String, String>,
-}
-
-#[derive(Serialize, Default)]
-struct Network {}
-
-#[derive(Serialize)]
-#[serde(rename_all = "snake_case")]
-enum DependsOnCondition {
-    ServiceCompletedSuccessfully,
-}
-
-fn serialize_depends_on<S>(
-    map: &HashMap<String, Option<DependsOnCondition>>,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: serde::Serializer,
-{
-    use serde::Serialize;
-
-    let mut map_serializer = serializer.serialize_map(Some(map.len()))?;
-    for (key, value) in map {
-        match value {
-            None => {
-                // Serialize as empty map for simple dependency
-                map_serializer.serialize_entry(key, &())?;
-            }
-            Some(condition) => {
-                #[derive(Serialize)]
-                struct WithCondition<'a> {
-                    condition: &'a DependsOnCondition,
-                }
-                map_serializer.serialize_entry(key, &WithCondition { condition })?;
-            }
-        }
-    }
-    map_serializer.end()
-}
-
-fn serialize_service_volume<S>(
-    volumes: &Vec<ServiceVolume>,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    use serde::ser::SerializeSeq;
-
-    let mut seq = serializer.serialize_seq(Some(volumes.len()))?;
-    for volume in volumes {
-        let volume_str = format!("{}:{}", volume.host, volume.target);
-        seq.serialize_element(&volume_str)?;
-    }
-    seq.end()
-}
-
-#[derive(Debug)]
-struct Port {
-    host: Option<u16>,
-    container: u16,
-}
-
-impl Serialize for Port {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let port_mapping = if let Some(host) = self.host {
-            // Docker Compose ports format: "host:container" or extended format
-            format!("{}:{}", host, self.container)
-        } else {
-            format!("{}", self.container)
-        };
-
-        // For simple format, just serialize as string
-        port_mapping.serialize(serializer)
-    }
-}
+use crate::compose::{
+    DependsOnCondition, DockerComposeService, DockerComposeSpec, Port, ServiceVolume,
+};
 
 #[derive(Clone)]
 struct ReservedPorts {
@@ -530,43 +396,5 @@ mod tests {
         // Reserve another port
         let port3 = reserved_ports.reserve_port(8545);
         assert_eq!(port3, Some(8547));
-    }
-
-    #[test]
-    fn test_docker_compose_spec_with_volumes() {
-        let mut spec = DockerComposeSpec {
-            services: HashMap::new(),
-            networks: HashMap::new(),
-            volumes: HashMap::new(),
-        };
-
-        let service = DockerComposeService {
-            image: "test-image:latest".to_string(),
-            command: vec![],
-            volumes: vec![ServiceVolume {
-                host: "/host/path".to_string(),
-                target: "/container/path".to_string(),
-            }],
-            ..Default::default()
-        };
-        spec.services.insert("test-service".to_string(), service);
-        spec.networks.insert("test".to_string(), None);
-
-        let mut driver_opts = HashMap::new();
-        driver_opts.insert("type".to_string(), "nfs".to_string());
-
-        let mut labels = HashMap::new();
-        labels.insert("description".to_string(), "My data volume".to_string());
-
-        let volume = Volume {
-            driver: Some("local".to_string()),
-            driver_opts,
-            labels,
-        };
-        spec.volumes.insert("mydata".to_string(), Some(volume));
-
-        let yaml = serde_yaml::to_string(&spec).unwrap();
-        let expected = include_str!("../fixtures/docker-compose-with-volumes.yaml");
-        assert_eq!(yaml.trim(), expected.trim());
     }
 }
