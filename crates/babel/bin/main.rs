@@ -16,6 +16,10 @@ struct Cli {
     /// Server bind address
     #[arg(long, default_value = "127.0.0.1:3000")]
     addr: String,
+
+    /// Node name for metrics labels (defaults to hostname/IP from rpc_url)
+    #[arg(long)]
+    nodename: Option<String>,
 }
 
 #[tokio::main]
@@ -26,26 +30,46 @@ async fn main() -> eyre::Result<()> {
 
     let cli = Cli::parse();
 
+    // Determine nodename: use provided value or extract from rpc_url
+    let nodename = match cli.nodename {
+        Some(name) => Some(name),
+        None => {
+            // Parse the URL and extract hostname
+            match url::Url::parse(&cli.rpc_url) {
+                Ok(url) => {
+                    let host = url.host_str().unwrap_or("unknown");
+                    if host == "localhost" || host == "127.0.0.1" {
+                        None
+                    } else {
+                        Some(host.to_string())
+                    }
+                }
+                Err(_) => None,
+            }
+        }
+    };
+
     tracing::info!(
-        "Starting Babel server for {} node at {}",
+        "Starting Babel server for {} node at {} with nodename {:?}",
         cli.node_type,
-        cli.rpc_url
+        cli.rpc_url,
+        nodename,
     );
 
     match cli.node_type.as_str() {
         "ethereum" => {
             let babel = EthereumBabel::new(cli.rpc_url).await?;
-            let server = BabelServer::new(babel);
+            let server = BabelServer::new(babel, nodename);
             server.serve(&cli.addr).await?;
         }
         "ethereum_beacon" => {
             let babel = EthereumBeaconBabel::new(cli.rpc_url);
-            let server = BabelServer::new(babel);
+            let server = BabelServer::new(babel, nodename);
             server.serve(&cli.addr).await?;
         }
         "cosmos" => {
             let babel = CosmosBabel::new(cli.rpc_url);
-            let server = BabelServer::new(babel);
+            let server = BabelServer::new(babel, nodename);
             server.serve(&cli.addr).await?;
         }
         _ => {
