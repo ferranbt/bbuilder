@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use spec::{
-    Arg, Artifacts, Babel, Capabilities, ChainSpec, ComputeResource, DEFAULT_JWT_TOKEN, Deployment,
-    Manifest, Pod, Port, Spec, Volume,
+    Arg, Artifacts, Babel, ComputeResource, DEFAULT_JWT_TOKEN, Deployment, Manifest, Pod, Port,
+    Spec, Volume,
 };
 
 #[derive(Default, Clone)]
@@ -23,19 +23,6 @@ pub struct EthDeploymentInput {
 impl Deployment for EthereumDeployment {
     type Input = EthDeploymentInput;
     type Chains = Chains;
-
-    fn capabilities(&self) -> Vec<ChainSpec<Chains>> {
-        vec![
-            ChainSpec {
-                chain: Chains::Mainnet,
-                min_version: "".to_string(),
-            },
-            ChainSpec {
-                chain: Chains::Sepolia,
-                min_version: "".to_string(),
-            },
-        ]
-    }
 
     fn manifest(&self, chain: Chains, input: EthDeploymentInput) -> eyre::Result<Manifest> {
         let mut manifest = Manifest::new("eth".to_string());
@@ -87,24 +74,6 @@ pub struct Reth {}
 impl ComputeResource for Reth {
     type Chains = Chains;
 
-    fn capabilities(&self) -> Capabilities<Chains> {
-        Capabilities {
-            chains: vec![
-                ChainSpec {
-                    chain: Chains::Mainnet,
-                    min_version: "v1.4.8".to_string(),
-                },
-                ChainSpec {
-                    chain: Chains::Sepolia,
-                    min_version: "v1.4.8".to_string(),
-                },
-            ],
-            volumes: vec![Volume {
-                name: "data".to_string(),
-            }],
-        }
-    }
-
     fn spec(&self, chain: Chains) -> eyre::Result<Pod> {
         let chain_arg = match chain {
             Chains::Mainnet => "mainnet",
@@ -114,6 +83,10 @@ impl ComputeResource for Reth {
         let node = Spec::builder()
             .image("ghcr.io/paradigmxyz/reth")
             .tag("v1.4.8")
+            .volume(Volume {
+                name: "data".to_string(),
+                path: "/data".to_string(),
+            })
             .arg("node")
             .arg2("--chain", chain_arg)
             .arg("--full")
@@ -165,24 +138,6 @@ pub struct Lighthouse {}
 impl ComputeResource for Lighthouse {
     type Chains = Chains;
 
-    fn capabilities(&self) -> Capabilities<Chains> {
-        Capabilities {
-            chains: vec![
-                ChainSpec {
-                    chain: Chains::Mainnet,
-                    min_version: "v1.4.8".to_string(),
-                },
-                ChainSpec {
-                    chain: Chains::Sepolia,
-                    min_version: "v1.4.8".to_string(),
-                },
-            ],
-            volumes: vec![Volume {
-                name: "data".to_string(),
-            }],
-        }
-    }
-
     fn spec(&self, chain: Chains) -> eyre::Result<Pod> {
         let chain_arg = match chain {
             Chains::Mainnet => "mainnet",
@@ -193,6 +148,10 @@ impl ComputeResource for Lighthouse {
             .image("sigp/lighthouse")
             .tag("v8.0.0-rc.2")
             .entrypoint(["lighthouse"])
+            .volume(Volume {
+                name: "data".to_string(),
+                path: "/data".to_string(),
+            })
             .arg("bn")
             .arg2("--network", chain_arg)
             .arg2(
@@ -228,13 +187,6 @@ pub struct Prysm {}
 
 impl ComputeResource for Prysm {
     type Chains = Chains;
-
-    fn capabilities(&self) -> Capabilities<Chains> {
-        Capabilities {
-            chains: vec![],
-            volumes: vec![],
-        }
-    }
 
     fn spec(&self, chain: Chains) -> eyre::Result<Pod> {
         let chain_arg = match chain {
