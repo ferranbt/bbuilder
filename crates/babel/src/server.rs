@@ -47,6 +47,8 @@ impl BabelServer {
 
         Router::new()
             .route("/status", get(status_handler))
+            .route("/ready", get(ready_handler))
+            .route("/healthy", get(healthy_handler))
             .route("/metrics", get(move || metrics_handler(prometheus_handle)))
             .with_state(self.state)
     }
@@ -78,7 +80,7 @@ impl BabelServer {
             match state.babel.status().await {
                 Ok(status) => {
                     // Update metrics
-                    state.metrics.peers_total.set(status.peers as f64);
+                    state.metrics.update_metrics(&status);
 
                     // Update cached status
                     *state.cached_status.write().await = Some(status);
@@ -101,6 +103,36 @@ async fn status_handler(State(state): State<AppState>) -> Result<Json<Status>, A
         .ok_or_else(|| eyre::eyre!("Status not yet available"))?;
 
     Ok(Json(status))
+}
+
+async fn ready_handler(State(state): State<AppState>) -> Result<StatusCode, AppError> {
+    let status = state
+        .cached_status
+        .read()
+        .await
+        .clone()
+        .ok_or_else(|| eyre::eyre!("Status not yet available"))?;
+
+    if status.is_ready {
+        Ok(StatusCode::OK)
+    } else {
+        Ok(StatusCode::SERVICE_UNAVAILABLE)
+    }
+}
+
+async fn healthy_handler(State(state): State<AppState>) -> Result<StatusCode, AppError> {
+    let status = state
+        .cached_status
+        .read()
+        .await
+        .clone()
+        .ok_or_else(|| eyre::eyre!("Status not yet available"))?;
+
+    if status.is_healthy {
+        Ok(StatusCode::OK)
+    } else {
+        Ok(StatusCode::SERVICE_UNAVAILABLE)
+    }
 }
 
 async fn metrics_handler(prometheus_handle: PrometheusHandle) -> String {

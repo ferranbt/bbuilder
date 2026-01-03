@@ -15,6 +15,8 @@ pub struct Status {
     pub current_block_number: u64,
     pub is_syncing: bool,
     pub latest_block_number: Option<u64>,
+    pub is_ready: bool,
+    pub is_healthy: bool,
 }
 
 pub mod cosmos;

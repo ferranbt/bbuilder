@@ -73,6 +73,8 @@ impl Babel for CosmosBabel {
             current_block_number: sync_info.latest_block_height,
             latest_block_number: None,
             is_syncing: sync_info.catching_up,
+            is_ready: peers > 0 && !sync_info.catching_up,
+            is_healthy: true,
         })
     }
 }
