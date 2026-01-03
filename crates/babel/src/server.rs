@@ -17,16 +17,22 @@ pub struct BabelServer {
 }
 
 impl BabelServer {
-    pub fn new(babel: impl Babel + 'static) -> Self {
+    pub fn new(babel: impl Babel + 'static, nodename: Option<String>) -> Self {
         // Setup Prometheus exporter
         let builder = metrics_exporter_prometheus::PrometheusBuilder::new();
         let prometheus_handle = builder
             .install_recorder()
             .expect("failed to install Prometheus recorder");
 
+        let metrics = if let Some(nodename) = nodename {
+            BabelMetrics::new_with_labels(&[("nodename", nodename)])
+        } else {
+            BabelMetrics::default()
+        };
+
         let state = AppState {
             babel: Arc::new(babel),
-            metrics: BabelMetrics::default(),
+            metrics,
             cached_status: Arc::new(RwLock::new(None)),
         };
 
