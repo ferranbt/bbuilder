@@ -4,10 +4,7 @@ use k256::ecdsa::SigningKey as kSigningKey;
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Keccak256};
-use spec::{
-    Arg, Artifacts, Babel, Capabilities, ChainSpec, ComputeResource, Deployment, Manifest, Pod,
-    Spec, Volume,
-};
+use spec::{Arg, Artifacts, Babel, ComputeResource, Deployment, Manifest, Pod, Spec, Volume};
 use template::Template;
 
 #[derive(Default, Clone)]
@@ -45,24 +42,6 @@ struct HeimdallClientConfigFile {
 impl ComputeResource for Heimdall {
     type Chains = Chains;
 
-    fn capabilities(&self) -> Capabilities<Chains> {
-        Capabilities {
-            chains: vec![
-                ChainSpec {
-                    chain: Chains::Mainnet,
-                    min_version: "v1.4.8".to_string(),
-                },
-                ChainSpec {
-                    chain: Chains::Amoy,
-                    min_version: "v1.4.8".to_string(),
-                },
-            ],
-            volumes: vec![Volume {
-                name: "data".to_string(),
-            }],
-        }
-    }
-
     fn spec(&self, chain: Chains) -> eyre::Result<Pod> {
         let app_config = include_str!("heimdall/app.toml");
         let config_config = include_str!("heimdall/config.toml");
@@ -83,6 +62,10 @@ impl ComputeResource for Heimdall {
             .image("0xpolygon/heimdall-v2")
             .entrypoint(["/usr/bin/heimdalld"])
             .tag("0.2.16")
+            .volume(Volume {
+                name: "data".to_string(),
+                path: "/data".to_string(),
+            })
             .arg("start")
             .arg2("--home", "/data/heimdall")
             .arg2(
@@ -244,13 +227,6 @@ fn bor_genesis(chain: Chains) -> String {
 impl ComputeResource for Bor {
     type Chains = Chains;
 
-    fn capabilities(&self) -> Capabilities<Chains> {
-        Capabilities {
-            chains: vec![],
-            volumes: vec![],
-        }
-    }
-
     fn spec(&self, chain: Chains) -> eyre::Result<Pod> {
         let config = BorConfig {
             chain: chain.name().to_string(),
@@ -260,6 +236,10 @@ impl ComputeResource for Bor {
         let node = Spec::builder()
             .image("0xpolygon/bor")
             .tag("1.1.0")
+            .volume(Volume {
+                name: "data".to_string(),
+                path: "/data".to_string(),
+            })
             .arg("server")
             .arg2("--config", "/data/config.toml")
             .artifact(Artifacts::File(spec::File {
@@ -289,19 +269,6 @@ pub struct PolygonDeployment {}
 impl Deployment for PolygonDeployment {
     type Input = PolygonDeploymentInput;
     type Chains = Chains;
-
-    fn capabilities(&self) -> Vec<ChainSpec<Chains>> {
-        vec![
-            ChainSpec {
-                chain: Chains::Mainnet,
-                min_version: "".to_string(),
-            },
-            ChainSpec {
-                chain: Chains::Amoy,
-                min_version: "".to_string(),
-            },
-        ]
-    }
 
     fn manifest(&self, chain: Chains, input: PolygonDeploymentInput) -> eyre::Result<Manifest> {
         let mut manifest = Manifest::new("polygon".to_string());

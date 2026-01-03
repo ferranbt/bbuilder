@@ -24,7 +24,6 @@ pub trait Deployment {
         Ok(manifest)
     }
 
-    fn capabilities(&self) -> Vec<ChainSpec<Self::Chains>>;
     fn manifest(&self, chain: Self::Chains, input: Self::Input) -> eyre::Result<Manifest>;
 }
 
@@ -32,7 +31,6 @@ pub trait ComputeResource {
     type Chains: Default;
 
     fn spec(&self, chain: Self::Chains) -> eyre::Result<Pod>;
-    fn capabilities(&self) -> Capabilities<Self::Chains>;
 }
 
 #[derive(Default)]
@@ -44,6 +42,7 @@ pub struct Capabilities<Chains: Default> {
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct Volume {
     pub name: String,
+    pub path: String,
 }
 
 #[derive(Default)]
@@ -209,7 +208,7 @@ pub struct Spec {
     pub env: HashMap<String, String>,
     pub artifacts: Vec<Artifacts>,
     pub ports: Vec<Port>,
-    pub volumes: HashMap<String, Volume>,
+    pub volumes: Vec<Volume>,
 }
 
 #[derive(Default)]
@@ -222,7 +221,7 @@ pub struct SpecBuilder {
     labels: HashMap<String, String>,
     artifacts: Vec<Artifacts>,
     ports: Vec<Port>,
-    volumes: HashMap<String, Volume>,
+    volumes: Vec<Volume>,
 }
 
 impl Spec {
@@ -295,7 +294,7 @@ impl SpecBuilder {
     }
 
     pub fn volume(mut self, volume: Volume) -> Self {
-        self.volumes.insert(volume.name.clone(), volume);
+        self.volumes.push(volume);
         self
     }
 

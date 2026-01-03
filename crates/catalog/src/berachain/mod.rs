@@ -1,8 +1,5 @@
 use serde::{Deserialize, Serialize};
-use spec::{
-    Arg, Artifacts, Babel, Capabilities, ChainSpec, ComputeResource, Deployment, Manifest, Pod,
-    Spec,
-};
+use spec::{Arg, Artifacts, Babel, ComputeResource, Deployment, Manifest, Pod, Spec, Volume};
 use template::Template;
 use tokio::task;
 
@@ -41,13 +38,6 @@ pub struct BerachainDeployment {}
 impl Deployment for BerachainDeployment {
     type Input = BerachainDeploymentInput;
     type Chains = Chains;
-
-    fn capabilities(&self) -> Vec<ChainSpec<Chains>> {
-        vec![ChainSpec {
-            chain: Chains::Mainnet,
-            min_version: "".to_string(),
-        }]
-    }
 
     fn manifest(&self, chain: Chains, input: BerachainDeploymentInput) -> eyre::Result<Manifest> {
         let mut manifest = Manifest::new("berachain".to_string());
@@ -105,13 +95,6 @@ pub struct BeaconKit {}
 impl ComputeResource for BeaconKit {
     type Chains = Chains;
 
-    fn capabilities(&self) -> Capabilities<Chains> {
-        Capabilities {
-            chains: vec![],
-            volumes: vec![],
-        }
-    }
-
     fn spec(&self, chain: Chains) -> eyre::Result<Pod> {
         let chain_id = chain.chain_id();
 
@@ -126,6 +109,10 @@ impl ComputeResource for BeaconKit {
         let node = Spec::builder()
             .image("ghcr.io/berachain/beacon-kit")
             .tag("v1.3.4-rc1")
+            .volume(Volume {
+                name: "data".to_string(),
+                path: "/data".to_string(),
+            })
             .arg("start")
             .arg2("--home", "/data")
             .arg2(
@@ -168,19 +155,16 @@ pub struct BeraReth {}
 impl ComputeResource for BeraReth {
     type Chains = Chains;
 
-    fn capabilities(&self) -> Capabilities<Chains> {
-        Capabilities {
-            chains: vec![],
-            volumes: vec![],
-        }
-    }
-
     fn spec(&self, chain: Chains) -> eyre::Result<Pod> {
         let chain_id = chain.chain_id();
 
         let node = Spec::builder()
             .image("ghcr.io/berachain/bera-reth")
             .tag("v1.3.0")
+            .volume(Volume {
+                name: "data".to_string(),
+                path: "/data".to_string(),
+            })
             .arg2("--chain", "/data/genesis.json")
             .arg2(
                 "--http.port",

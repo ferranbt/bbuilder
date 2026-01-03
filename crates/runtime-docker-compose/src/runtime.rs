@@ -239,6 +239,7 @@ impl DockerRuntime {
         manifest: Manifest,
     ) -> eyre::Result<DockerComposeSpec> {
         let mut services = HashMap::new();
+        let mut volumes = HashMap::new();
         let compose_dir = std::path::Path::new(&self.dir_path).join(&manifest.name);
 
         for (pod_name, pod) in &manifest.pods {
@@ -251,21 +252,18 @@ impl DockerRuntime {
 
                 let mut ports = vec![];
                 let mut command = vec![];
-                let mut volumes = vec![];
+                let mut service_volumes = vec![];
                 let mut init_services = HashMap::new();
                 let mut artifacts_to_process = vec![];
                 let mut environment = HashMap::new();
 
-                // Track volume mounts by target directory to reuse volumes
-                // let mut volume_mounts: HashMap<String, String> = HashMap::new();
-                let data_path = compose_dir.join("data");
-                std::fs::create_dir_all(&data_path)?;
-                let absolute_data_path = data_path.canonicalize()?;
+                for vol in &spec.volumes {
+                    let vol_name = format!("{}-{}", pod_name, vol.name.clone());
+                    volumes.insert(vol_name.clone(), None);
 
-                {
-                    volumes.push(ServiceVolume {
-                        host: absolute_data_path.display().to_string(),
-                        target: "/data".to_string(),
+                    service_volumes.push(ServiceVolume {
+                        host: vol_name.clone(),
+                        target: vol.path.clone(),
                     });
                 }
 
@@ -321,13 +319,28 @@ impl DockerRuntime {
                                 let init_service_name =
                                     format!("{}-{}-init-{}", pod_name, spec_name, name);
 
+                                // Figure out which volume is this artifact refering to
+                                let matching_vol = spec
+                                    .volumes
+                                    .iter()
+                                    .find(|vol| target_path.starts_with(&vol.path))
+                                    .ok_or_else(|| {
+                                        eyre::eyre!(
+                                            "No matching volume found for path: {}",
+                                            target_path
+                                        )
+                                    })?;
+
+                                let matching_vol_name =
+                                    format!("{}-{}", pod_name, matching_vol.name.clone());
+
                                 // Create init container service
                                 let init_service = DockerComposeService {
                                     image: "ghcr.io/ferranbt/bbuilder/fetcher:latest".to_string(),
                                     command: vec![content, target_path],
                                     volumes: vec![ServiceVolume {
-                                        host: absolute_data_path.display().to_string(),
-                                        target: "/data".to_string(),
+                                        host: matching_vol_name.clone(),
+                                        target: matching_vol.path.clone(),
                                     }],
                                     ..Default::default()
                                 };
@@ -344,7 +357,7 @@ impl DockerRuntime {
                                 }
                                 std::fs::write(&target_host_path, content)?;
 
-                                volumes.push(ServiceVolume {
+                                service_volumes.push(ServiceVolume {
                                     host: target_host_path.display().to_string(),
                                     target: target_path,
                                 });
@@ -367,7 +380,7 @@ impl DockerRuntime {
                     image,
                     labels,
                     ports,
-                    volumes,
+                    volumes: service_volumes,
                     networks: vec!["test".to_string()],
                     depends_on: init_services,
                 };
@@ -379,8 +392,6 @@ impl DockerRuntime {
 
         let mut networks = HashMap::new();
         networks.insert("test".to_string(), None);
-
-        let volumes = HashMap::new();
 
         Ok(DockerComposeSpec {
             services,
