@@ -22,7 +22,17 @@ impl BabelServer {
         let builder = metrics_exporter_prometheus::PrometheusBuilder::new();
         let prometheus_handle = builder
             .install_recorder()
-            .expect("failed to install Prometheus recorder");
+            .unwrap_or_else(|_| {
+                // In tests, recorder might already be installed
+                #[cfg(test)]
+                {
+                    metrics_exporter_prometheus::PrometheusBuilder::new()
+                        .build_recorder()
+                        .handle()
+                }
+                #[cfg(not(test))]
+                panic!("failed to install Prometheus recorder")
+            });
 
         let metrics = if let Some(nodename) = nodename {
             BabelMetrics::new_with_labels(&[("nodename", nodename)])
@@ -187,5 +197,121 @@ async fn shutdown_signal() {
         _ = terminate => {
             tracing::info!("Received SIGTERM, shutting down gracefully");
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Babel, Status};
+    use async_trait::async_trait;
+    use std::sync::Arc;
+    use tokio::sync::RwLock;
+
+    // Mock Babel implementation for testing
+    struct MockBabel {
+        status: Arc<RwLock<Status>>,
+    }
+
+    impl MockBabel {
+        fn new(status: Status) -> Self {
+            Self {
+                status: Arc::new(RwLock::new(status)),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl Babel for MockBabel {
+        async fn status(&self) -> eyre::Result<Status> {
+            Ok(self.status.read().await.clone())
+        }
+    }
+
+    async fn setup_server_with_status(status: Status) -> axum_test::TestServer {
+        let mock_babel = MockBabel::new(status);
+        let server = BabelServer::new(mock_babel, None);
+
+        // Start the status polling task
+        let state = server.state.clone();
+        tokio::spawn(async move {
+            BabelServer::status_polling_loop(state).await;
+        });
+
+        let router = server.router();
+        let client = axum_test::TestServer::new(router).unwrap();
+
+        // Wait for status polling to run at least once
+        tokio::time::sleep(tokio::time::Duration::from_millis(1500)).await;
+
+        client
+    }
+
+    #[tokio::test]
+    async fn test_healthy_endpoint() {
+        // Test healthy status
+        let client = setup_server_with_status(Status {
+            is_healthy: true,
+            ..Default::default()
+        })
+        .await;
+
+        let response = client.get("/healthy").await;
+        assert_eq!(response.status_code(), axum::http::StatusCode::OK);
+
+        // Test unhealthy status
+        let client = setup_server_with_status(Status::default()).await;
+
+        let response = client.get("/healthy").await;
+        assert_eq!(
+            response.status_code(),
+            axum::http::StatusCode::SERVICE_UNAVAILABLE
+        );
+    }
+
+    #[tokio::test]
+    async fn test_ready_endpoint() {
+        // Test ready status
+        let client = setup_server_with_status(Status {
+            is_ready: true,
+            ..Default::default()
+        })
+        .await;
+
+        let response = client.get("/ready").await;
+        assert_eq!(response.status_code(), axum::http::StatusCode::OK);
+
+        // Test not ready status
+        let client = setup_server_with_status(Status::default()).await;
+
+        let response = client.get("/ready").await;
+        assert_eq!(
+            response.status_code(),
+            axum::http::StatusCode::SERVICE_UNAVAILABLE
+        );
+    }
+
+    #[tokio::test]
+    async fn test_status_endpoint() {
+        let client = setup_server_with_status(Status {
+            peers: 10,
+            current_block_number: 500,
+            is_syncing: true,
+            latest_block_number: Some(1000),
+            is_healthy: true,
+            ..Default::default()
+        })
+        .await;
+
+        let response = client.get("/status").await;
+        assert_eq!(response.status_code(), axum::http::StatusCode::OK);
+
+        let status: Status = response.json();
+        assert_eq!(status.peers, 10);
+        assert_eq!(status.current_block_number, 500);
+        assert_eq!(status.is_syncing, true);
+        assert_eq!(status.latest_block_number, Some(1000));
+        assert_eq!(status.is_ready, false);
+        assert_eq!(status.is_healthy, true);
     }
 }

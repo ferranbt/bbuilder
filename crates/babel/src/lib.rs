@@ -9,7 +9,7 @@ pub trait Babel: Send + Sync {
 }
 
 /// Status response
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Status {
     pub peers: u64,
     pub current_block_number: u64,
