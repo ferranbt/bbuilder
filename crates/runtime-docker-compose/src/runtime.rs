@@ -17,6 +17,9 @@ struct DockerComposeSpec {
 
     #[serde(skip_serializing_if = "HashMap::is_empty")]
     networks: HashMap<String, Option<Network>>,
+
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    volumes: HashMap<String, Option<Volume>>,
 }
 
 #[derive(Serialize, Default)]
@@ -41,11 +44,30 @@ struct DockerComposeService {
     networks: Vec<String>,
 
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    volumes: Vec<String>,
+    #[serde(serialize_with = "serialize_service_volume")]
+    volumes: Vec<ServiceVolume>,
 
     #[serde(skip_serializing_if = "HashMap::is_empty")]
     #[serde(serialize_with = "serialize_depends_on")]
     depends_on: HashMap<String, Option<DependsOnCondition>>,
+}
+
+#[derive(Default)]
+struct ServiceVolume {
+    pub host: String,
+    pub target: String,
+}
+
+#[derive(Serialize, Default)]
+struct Volume {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    driver: Option<String>,
+
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    driver_opts: HashMap<String, String>,
+
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    labels: HashMap<String, String>,
 }
 
 #[derive(Serialize, Default)]
@@ -83,6 +105,23 @@ where
         }
     }
     map_serializer.end()
+}
+
+fn serialize_service_volume<S>(
+    volumes: &Vec<ServiceVolume>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    use serde::ser::SerializeSeq;
+
+    let mut seq = serializer.serialize_seq(Some(volumes.len()))?;
+    for volume in volumes {
+        let volume_str = format!("{}:{}", volume.host, volume.target);
+        seq.serialize_element(&volume_str)?;
+    }
+    seq.end()
 }
 
 #[derive(Debug)]
@@ -224,8 +263,10 @@ impl DockerRuntime {
                 let absolute_data_path = data_path.canonicalize()?;
 
                 {
-                    let volume_mapping = format!("{}:{}", absolute_data_path.display(), "/data");
-                    volumes.push(volume_mapping);
+                    volumes.push(ServiceVolume {
+                        host: absolute_data_path.display().to_string(),
+                        target: "/data".to_string(),
+                    });
                 }
 
                 for (key, value) in &spec.env {
@@ -284,11 +325,10 @@ impl DockerRuntime {
                                 let init_service = DockerComposeService {
                                     image: "ghcr.io/ferranbt/bbuilder/fetcher:latest".to_string(),
                                     command: vec![content, target_path],
-                                    volumes: vec![format!(
-                                        "{}:{}",
-                                        absolute_data_path.display(),
-                                        "/data"
-                                    )],
+                                    volumes: vec![ServiceVolume {
+                                        host: absolute_data_path.display().to_string(),
+                                        target: "/data".to_string(),
+                                    }],
                                     ..Default::default()
                                 };
 
@@ -304,11 +344,10 @@ impl DockerRuntime {
                                 }
                                 std::fs::write(&target_host_path, content)?;
 
-                                volumes.push(format!(
-                                    "{}:{}",
-                                    target_host_path.display(),
-                                    target_path
-                                ));
+                                volumes.push(ServiceVolume {
+                                    host: target_host_path.display().to_string(),
+                                    target: target_path,
+                                });
                             }
                         }
                     }
@@ -341,7 +380,13 @@ impl DockerRuntime {
         let mut networks = HashMap::new();
         networks.insert("test".to_string(), None);
 
-        Ok(DockerComposeSpec { services, networks })
+        let volumes = HashMap::new();
+
+        Ok(DockerComposeSpec {
+            services,
+            networks,
+            volumes,
+        })
     }
 }
 
@@ -414,7 +459,7 @@ mod tests {
         let has_config_volume = service
             .volumes
             .iter()
-            .any(|v| v.contains("config.json") && v.contains("/app/config.json"));
+            .any(|v| v.host.contains("config.json") && v.target.contains("/app/config.json"));
 
         assert!(
             has_config_volume,
@@ -474,5 +519,43 @@ mod tests {
         // Reserve another port
         let port3 = reserved_ports.reserve_port(8545);
         assert_eq!(port3, Some(8547));
+    }
+
+    #[test]
+    fn test_docker_compose_spec_with_volumes() {
+        let mut spec = DockerComposeSpec {
+            services: HashMap::new(),
+            networks: HashMap::new(),
+            volumes: HashMap::new(),
+        };
+
+        let service = DockerComposeService {
+            image: "test-image:latest".to_string(),
+            command: vec![],
+            volumes: vec![ServiceVolume {
+                host: "/host/path".to_string(),
+                target: "/container/path".to_string(),
+            }],
+            ..Default::default()
+        };
+        spec.services.insert("test-service".to_string(), service);
+        spec.networks.insert("test".to_string(), None);
+
+        let mut driver_opts = HashMap::new();
+        driver_opts.insert("type".to_string(), "nfs".to_string());
+
+        let mut labels = HashMap::new();
+        labels.insert("description".to_string(), "My data volume".to_string());
+
+        let volume = Volume {
+            driver: Some("local".to_string()),
+            driver_opts,
+            labels,
+        };
+        spec.volumes.insert("mydata".to_string(), Some(volume));
+
+        let yaml = serde_yaml::to_string(&spec).unwrap();
+        let expected = include_str!("../fixtures/docker-compose-with-volumes.yaml");
+        assert_eq!(yaml.trim(), expected.trim());
     }
 }

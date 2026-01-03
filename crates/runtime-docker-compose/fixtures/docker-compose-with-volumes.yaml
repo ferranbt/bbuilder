@@ -1,0 +1,15 @@
+services:
+  test-service:
+    image: test-image:latest
+    command: []
+    volumes:
+    - /host/path:/container/path
+networks:
+  test: null
+volumes:
+  mydata:
+    driver: local
+    driver_opts:
+      type: nfs
+    labels:
+      description: My data volume
