@@ -314,13 +314,20 @@ mod tests {
     use super::*;
     use spec::{Artifacts, File, Manifest, Pod, Spec};
 
-    #[tokio::test]
-    async fn test_artifact_files_are_mounted_in_volumes() -> eyre::Result<()> {
+    fn generate_docker_compose(manifest: Manifest) -> eyre::Result<DockerComposeSpec> {
         let temp_dir = std::env::temp_dir().join("test-runtime");
         let _ = std::fs::remove_dir_all(&temp_dir);
         std::fs::create_dir_all(&temp_dir).unwrap();
         let runtime = DockerRuntime::new(temp_dir.to_str().unwrap().to_string());
 
+        let docker_compose_spec = runtime.convert_to_docker_compose_spec(manifest)?;
+        let _ = std::fs::remove_dir_all(&temp_dir);
+
+        Ok(docker_compose_spec)
+    }
+
+    #[tokio::test]
+    async fn test_artifact_files_are_mounted_in_volumes() -> eyre::Result<()> {
         let mut manifest = Manifest::new("test-manifest".to_string());
 
         let file_artifact = File {
@@ -337,7 +344,7 @@ mod tests {
         let pod = Pod::default().with_spec("test-service", spec);
         manifest.add_spec("test-pod".to_string(), pod);
 
-        let docker_compose = runtime.convert_to_docker_compose_spec(manifest)?;
+        let docker_compose = generate_docker_compose(manifest)?;
         let service = docker_compose
             .services
             .get("test-pod-test-service")
@@ -353,18 +360,11 @@ mod tests {
             "Artifact file should be mounted in volumes"
         );
 
-        let _ = std::fs::remove_dir_all(&temp_dir);
-
         Ok(())
     }
 
     #[tokio::test]
-    async fn test_port_arg_uses_preferred_port() {
-        let temp_dir = std::env::temp_dir().join("test-runtime-port");
-        let _ = std::fs::remove_dir_all(&temp_dir);
-        std::fs::create_dir_all(&temp_dir).unwrap();
-        let runtime = DockerRuntime::new(temp_dir.to_str().unwrap().to_string());
-
+    async fn test_port_arg_uses_preferred_port() -> eyre::Result<()> {
         let mut manifest = Manifest::new("port-test".to_string());
 
         let spec = Spec::builder()
@@ -378,7 +378,7 @@ mod tests {
         let pod = Pod::default().with_spec("service", spec);
         manifest.add_spec("pod".to_string(), pod);
 
-        let docker_compose = runtime.convert_to_docker_compose_spec(manifest).unwrap();
+        let docker_compose = generate_docker_compose(manifest)?;
         let service = docker_compose.services.get("pod-service").unwrap();
 
         assert_eq!(service.ports.len(), 1, "Port not found");
@@ -388,7 +388,7 @@ mod tests {
             "Command should contain port arg with preferred port"
         );
 
-        let _ = std::fs::remove_dir_all(&temp_dir);
+        Ok(())
     }
 
     #[test]
@@ -410,11 +410,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_volumes_are_created_with_bbuilder_label() -> eyre::Result<()> {
-        let temp_dir = std::env::temp_dir().join("test-runtime-volumes");
-        let _ = std::fs::remove_dir_all(&temp_dir);
-        std::fs::create_dir_all(&temp_dir).unwrap();
-        let runtime = DockerRuntime::new(temp_dir.to_str().unwrap().to_string());
-
         let mut manifest = Manifest::new("volume-test".to_string());
 
         let spec = Spec::builder()
@@ -428,7 +423,7 @@ mod tests {
         let pod = Pod::default().with_spec("service", spec);
         manifest.add_spec("pod".to_string(), pod);
 
-        let docker_compose = runtime.convert_to_docker_compose_spec(manifest)?;
+        let docker_compose = generate_docker_compose(manifest)?;
 
         // Verify the volume exists in the docker-compose spec
         assert!(
@@ -458,8 +453,40 @@ mod tests {
             "Service should have volume mounted at /data"
         );
 
-        let _ = std::fs::remove_dir_all(&temp_dir);
+        Ok(())
+    }
 
+    #[tokio::test]
+    async fn test_image_tag_defaults_to_latest() -> eyre::Result<()> {
+        let mut manifest = Manifest::new("tag-test".to_string());
+        let spec = Spec::builder().image("test-image").build();
+        let pod = Pod::default().with_spec("service", spec);
+        manifest.add_spec("pod".to_string(), pod);
+
+        let docker_compose = generate_docker_compose(manifest)?;
+        let service = docker_compose.services.get("pod-service").unwrap();
+
+        assert_eq!(service.image, "test-image:latest");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_service_includes_spec_labels_and_bbuilder_label() -> eyre::Result<()> {
+        let mut manifest = Manifest::new("label-test".to_string());
+        let spec = Spec::builder()
+            .image("test-image")
+            .label("app", "myapp")
+            .label("env", "production")
+            .build();
+        let pod = Pod::default().with_spec("service", spec);
+        manifest.add_spec("pod".to_string(), pod);
+
+        let docker_compose = generate_docker_compose(manifest)?;
+        let service = docker_compose.services.get("pod-service").unwrap();
+
+        assert_eq!(service.labels.get("app"), Some(&"myapp".to_string()));
+        assert_eq!(service.labels.get("env"), Some(&"production".to_string()));
+        assert_eq!(service.labels.get("bbuilder"), Some(&"true".to_string()));
         Ok(())
     }
 }
