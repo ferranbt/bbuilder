@@ -1,15 +1,40 @@
+use clap::{Parser, Subcommand};
 use runtime_docker_compose::DockerRuntime;
 use runtime_trait::Runtime;
 use spec::{Dep, Manifest};
-use std::{env, fs};
+use std::fs;
+
+#[derive(Parser)]
+#[command(name = "bbuilder")]
+#[command(about = "A builder application", long_about = None)]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Run the builder with the specified manifest file
+    Run {
+        /// Path to the manifest file
+        #[arg(value_name = "FILE")]
+        filename: String,
+    },
+}
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
-    // Get filename from command-line arguments
-    let args: Vec<String> = env::args().collect();
-    let filename = &args[1];
+    let cli = Cli::parse();
 
-    let contents = fs::read_to_string(filename)?;
+    match cli.command {
+        Commands::Run { filename } => run_command(filename).await?,
+    }
+
+    Ok(())
+}
+
+async fn run_command(filename: String) -> eyre::Result<()> {
+    let contents = fs::read_to_string(&filename)?;
     let input: Dep = serde_json::from_str(contents.as_str())?;
 
     println!("input {:?}", input);
