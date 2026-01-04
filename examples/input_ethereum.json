@@ -1,4 +1,5 @@
 {
+    "name": "ethereum-mainnet",
     "chain": "ethereum.mainnet",
     "module": "ethereum",
     "args": {
