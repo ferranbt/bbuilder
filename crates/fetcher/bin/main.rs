@@ -1,5 +1,5 @@
 use clap::Parser;
-use fetcher::{ConsoleProgressTracker, fetch_with_progress};
+use fetcher::{ConsoleProgressTracker, fetch_with_progress, verify_checksum};
 use std::path::PathBuf;
 use std::process;
 
@@ -16,6 +16,10 @@ struct Args {
     /// Expected SHA-256 checksum (hex string) to verify the downloaded file
     #[arg(long)]
     checksum: Option<String>,
+
+    /// Skip download if file exists and checksum matches (requires --checksum)
+    #[arg(long, requires = "checksum")]
+    skip_if_valid_checksum: bool,
 }
 
 fn main() {
@@ -33,6 +37,21 @@ fn main() {
 
     if let Some(ref checksum) = args.checksum {
         tracing::info!("Checksum verification enabled: {}", checksum);
+
+        // Check if we should skip downloading
+        if args.skip_if_valid_checksum && args.destination.exists() {
+            tracing::info!("File exists, verifying checksum before download...");
+            match verify_checksum(&args.destination, checksum) {
+                Ok(_) => {
+                    tracing::info!("✓ File already exists with valid checksum, skipping download");
+                    return;
+                }
+                Err(e) => {
+                    tracing::info!("Checksum mismatch or verification failed: {}", e);
+                    tracing::info!("Proceeding with download...");
+                }
+            }
+        }
     }
 
     let mut progress = ConsoleProgressTracker::new();

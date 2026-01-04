@@ -166,7 +166,7 @@ fn fetch_http<T: ProgressTracker>(
 }
 
 /// Verify the SHA-256 checksum of a file
-fn verify_checksum(file_path: &Path, expected_checksum: &str) -> Result<()> {
+pub fn verify_checksum(file_path: &Path, expected_checksum: &str) -> Result<()> {
     tracing::info!("Verifying checksum");
 
     let mut file = File::open(file_path).with_context(|| {
