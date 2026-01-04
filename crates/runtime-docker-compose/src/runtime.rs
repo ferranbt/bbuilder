@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex};
 use runtime_trait::Runtime;
 use spec::{File, Manifest};
 
+use crate::compose::Volume;
 use crate::compose::{
     DependsOnCondition, DockerComposeService, DockerComposeSpec, Port, ServiceVolume,
 };
@@ -124,8 +125,17 @@ impl DockerRuntime {
                 let mut environment = HashMap::new();
 
                 for vol in &spec.volumes {
+                    let mut volume_labels = HashMap::new();
+                    volume_labels.insert("bbuilder".to_string(), "true".to_string());
+
                     let vol_name = format!("{}-{}", pod_name, vol.name.clone());
-                    volumes.insert(vol_name.clone(), None);
+                    volumes.insert(
+                        vol_name.clone(),
+                        Some(Volume {
+                            labels: volume_labels,
+                            ..Default::default()
+                        }),
+                    );
 
                     service_volumes.push(ServiceVolume {
                         host: vol_name.clone(),
@@ -396,5 +406,60 @@ mod tests {
         // Reserve another port
         let port3 = reserved_ports.reserve_port(8545);
         assert_eq!(port3, Some(8547));
+    }
+
+    #[tokio::test]
+    async fn test_volumes_are_created_with_bbuilder_label() -> eyre::Result<()> {
+        let temp_dir = std::env::temp_dir().join("test-runtime-volumes");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let runtime = DockerRuntime::new(temp_dir.to_str().unwrap().to_string());
+
+        let mut manifest = Manifest::new("volume-test".to_string());
+
+        let spec = Spec::builder()
+            .image("test-image")
+            .volume(spec::Volume {
+                name: "data".to_string(),
+                path: "/data".to_string(),
+            })
+            .build();
+
+        let pod = Pod::default().with_spec("service", spec);
+        manifest.add_spec("pod".to_string(), pod);
+
+        let docker_compose = runtime.convert_to_docker_compose_spec(manifest)?;
+
+        // Verify the volume exists in the docker-compose spec
+        assert!(
+            docker_compose.volumes.contains_key("pod-data"),
+            "Volume 'pod-data' should exist in docker-compose volumes"
+        );
+
+        // Verify the volume has the bbuilder=true label
+        let volume = docker_compose.volumes.get("pod-data").unwrap();
+        assert!(volume.is_some(), "Volume should have configuration");
+        let volume_config = volume.as_ref().unwrap();
+        assert_eq!(
+            volume_config.labels.get("bbuilder"),
+            Some(&"true".to_string()),
+            "Volume should have bbuilder=true label"
+        );
+
+        // Verify the service has the volume mounted
+        let service = docker_compose.services.get("pod-service").unwrap();
+        let has_volume_mount = service
+            .volumes
+            .iter()
+            .any(|v| v.host == "pod-data" && v.target == "/data");
+
+        assert!(
+            has_volume_mount,
+            "Service should have volume mounted at /data"
+        );
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+
+        Ok(())
     }
 }
