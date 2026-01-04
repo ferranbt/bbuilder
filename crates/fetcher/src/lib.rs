@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use flate2::read::GzDecoder;
+use sha2::{Digest, Sha256};
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -87,14 +88,15 @@ impl ProgressTracker for ConsoleProgressTracker {
     }
 }
 
-pub fn fetch(source: &str, destination: &PathBuf) -> Result<()> {
-    fetch_with_progress(source, destination, &mut NoOpProgressTracker)
+pub fn fetch(source: &str, destination: &PathBuf, checksum: Option<String>) -> Result<()> {
+    fetch_with_progress(source, destination, &mut NoOpProgressTracker, checksum)
 }
 
 pub fn fetch_with_progress<T: ProgressTracker>(
     source: &str,
     destination: &PathBuf,
     progress: &mut T,
+    checksum: Option<String>,
 ) -> Result<()> {
     // Parse the source as a URL
     let url =
@@ -103,7 +105,13 @@ pub fn fetch_with_progress<T: ProgressTracker>(
     match url.scheme() {
         "http" | "https" => fetch_http(&url, destination, progress),
         scheme => anyhow::bail!("Unsupported URL scheme: {}", scheme),
+    }?;
+
+    if let Some(checksum) = checksum {
+        verify_checksum(destination, &checksum)?
     }
+
+    Ok(())
 }
 
 fn fetch_http<T: ProgressTracker>(
@@ -154,6 +162,35 @@ fn fetch_http<T: ProgressTracker>(
 
     progress_reader.finish();
 
+    Ok(())
+}
+
+/// Verify the SHA-256 checksum of a file
+fn verify_checksum(file_path: &Path, expected_checksum: &str) -> Result<()> {
+    println!("Verifying checksum");
+
+    let mut file = File::open(file_path).with_context(|| {
+        format!(
+            "Failed to open file for checksum verification: {}",
+            file_path.display()
+        )
+    })?;
+
+    let mut hasher = Sha256::new();
+    std::io::copy(&mut file, &mut hasher)
+        .context("Failed to read file for checksum computation")?;
+
+    let computed_hash = format!("{:x}", hasher.finalize());
+
+    if computed_hash != expected_checksum {
+        anyhow::bail!(
+            "Checksum verification failed!\nExpected: {}\nComputed: {}",
+            expected_checksum,
+            computed_hash
+        );
+    }
+
+    println!("✓ Checksum verified: {}", computed_hash);
     Ok(())
 }
 
@@ -215,7 +252,7 @@ mod tests {
         let _ = fs::remove_file(&destination);
 
         // Download the file
-        let result = fetch(source, &destination);
+        let result = fetch(source, &destination, None);
         assert!(
             result.is_ok(),
             "Failed to download file: {:?}",

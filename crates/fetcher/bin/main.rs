@@ -1,4 +1,5 @@
 use clap::Parser;
+use fetcher::{ConsoleProgressTracker, fetch_with_progress};
 use std::path::PathBuf;
 use std::process;
 
@@ -11,14 +12,23 @@ struct Args {
 
     /// Destination path to save the file
     destination: PathBuf,
+
+    /// Expected SHA-256 checksum (hex string) to verify the downloaded file
+    #[arg(long)]
+    checksum: Option<String>,
 }
 
 fn main() {
     let args = Args::parse();
 
-    let mut progress = fetcher::ConsoleProgressTracker::new();
+    let mut progress = ConsoleProgressTracker::new();
 
-    if let Err(e) = fetcher::fetch_with_progress(&args.source, &args.destination, &mut progress) {
+    if let Err(e) = fetch_with_progress(
+        &args.source,
+        &args.destination,
+        &mut progress,
+        args.checksum,
+    ) {
         eprintln!("Error: {}", e);
 
         // Print the error chain

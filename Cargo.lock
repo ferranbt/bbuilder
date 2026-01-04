@@ -1765,6 +1765,7 @@ dependencies = [
  "clap",
  "flate2",
  "reqwest",
+ "sha2",
  "tar",
  "url",
 ]
