@@ -1,4 +1,5 @@
 {
+    "name": "polygon-mainnet",
     "chain": "polygon.mainnet",
     "module": "polygon",
     "args": {

@@ -19,6 +19,9 @@ enum Commands {
         /// Path to the manifest file
         #[arg(value_name = "FILE")]
         filename: String,
+        /// Name for the deployment
+        #[arg(short, long)]
+        name: Option<String>,
     },
 }
 
@@ -27,19 +30,24 @@ async fn main() -> eyre::Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Run { filename } => run_command(filename).await?,
+        Commands::Run { filename, name } => run_command(filename, name).await?,
     }
 
     Ok(())
 }
 
-async fn run_command(filename: String) -> eyre::Result<()> {
+async fn run_command(filename: String, name: Option<String>) -> eyre::Result<()> {
     let contents = fs::read_to_string(&filename)?;
     let input: Dep = serde_json::from_str(contents.as_str())?;
 
     println!("input {:?}", input);
 
-    let manifest = catalog::apply(input)?;
+    let deployment_name = name
+        .or(input.name.clone())
+        .ok_or_else(|| eyre::eyre!("No name provided: specify via --name flag or in manifest"))?;
+
+    let mut manifest = catalog::apply(input)?;
+    manifest.name = deployment_name;
 
     let svc = Service::new(DockerRuntime::new("composer".to_string()));
     svc.deploy(manifest).await?;

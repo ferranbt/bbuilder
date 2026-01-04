@@ -9,6 +9,7 @@ pub const DEFAULT_JWT_TOKEN: &str =
 
 #[derive(Debug, Deserialize)]
 pub struct Dep {
+    pub name: Option<String>,
     pub module: String,
     pub chain: String,
     pub args: serde_json::Value,

@@ -1,4 +1,5 @@
 {
+    "name": "berachain-mainnet",
     "chain": "berachain.mainnet",
     "module": "berachain",
     "args": {
