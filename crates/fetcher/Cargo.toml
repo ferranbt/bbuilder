@@ -11,6 +11,10 @@ path = "bin/main.rs"
 clap = { workspace = true, features = ["derive"] }
 reqwest = { workspace = true, features = ["blocking", "rustls-tls"] }
 eyre = { workspace = true }
+fetcher-api = { workspace = true }
+tokio = { workspace = true }
+jsonrpsee = { workspace = true }
+
 url = "2.5"
 flate2 = "1.0"
 tar = "0.4"

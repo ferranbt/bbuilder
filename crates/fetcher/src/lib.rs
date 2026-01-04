@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 use tar::Archive;
 use url::Url;
 
+pub mod websocket;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum ArchiveFormat {
     TarGz,
