@@ -968,6 +968,7 @@ name = "bbuilder"
 version = "0.1.0"
 dependencies = [
  "catalog",
+ "clap",
  "eyre",
  "runtime-docker-compose",
  "runtime-trait",

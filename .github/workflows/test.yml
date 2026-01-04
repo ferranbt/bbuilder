@@ -29,8 +29,8 @@ jobs:
         with:
           toolchain: stable
       - name: Test Berachain example
-        run: cargo run --package bbuilder examples/input_berachain.json
+        run: cargo run --package bbuilder run examples/input_berachain.json
       - name: Test Polygon example
-        run: cargo run --package bbuilder examples/input_polygon.json
+        run: cargo run --package bbuilder run examples/input_polygon.json
       - name: Test Ethereum example
-        run: cargo run --package bbuilder examples/input_ethereum.json
+        run: cargo run --package bbuilder run examples/input_ethereum.json
