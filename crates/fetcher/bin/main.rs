@@ -5,7 +5,7 @@ use std::process;
 
 #[derive(Parser, Debug)]
 #[command(name = "fetcher")]
-#[command(about = "A go-getter-like tool to fetch files from various sources")]
+#[command(about = "A tool to fetch files from various sources")]
 struct Args {
     /// Source URL to fetch from
     source: String,
@@ -19,7 +19,21 @@ struct Args {
 }
 
 fn main() {
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .init();
+
     let args = Args::parse();
+
+    tracing::info!(
+        "Fetching from {} to {}",
+        args.source,
+        args.destination.display()
+    );
+
+    if let Some(ref checksum) = args.checksum {
+        tracing::info!("Checksum verification enabled: {}", checksum);
+    }
 
     let mut progress = ConsoleProgressTracker::new();
 
@@ -29,17 +43,17 @@ fn main() {
         &mut progress,
         args.checksum,
     ) {
-        eprintln!("Error: {}", e);
+        tracing::error!("Failed to fetch: {}", e);
 
         // Print the error chain
         let mut source = e.source();
         while let Some(err) = source {
-            eprintln!("  Caused by: {}", err);
+            tracing::error!("  Caused by: {}", err);
             source = err.source();
         }
 
         process::exit(1);
     }
 
-    println!("Successfully downloaded to: {}", args.destination.display());
+    tracing::info!("Successfully downloaded to: {}", args.destination.display());
 }

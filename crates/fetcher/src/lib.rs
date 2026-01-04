@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use eyre::{Context, Result};
 use flate2::read::GzDecoder;
 use sha2::{Digest, Sha256};
 use std::fs::File;
@@ -63,7 +63,7 @@ impl ConsoleProgressTracker {
 impl ProgressTracker for ConsoleProgressTracker {
     fn set_total(&mut self, total: u64) {
         self.total = Some(total);
-        println!(
+        tracing::info!(
             "Total size: {} bytes ({:.2} MB)",
             total,
             total as f64 / 1024.0 / 1024.0
@@ -74,17 +74,19 @@ impl ProgressTracker for ConsoleProgressTracker {
         self.downloaded = downloaded;
         if let Some(total) = self.total {
             let percentage = (downloaded as f64 / total as f64) * 100.0;
-            println!(
+            tracing::info!(
                 "Downloaded: {} / {} bytes ({:.2}%)",
-                downloaded, total, percentage
+                downloaded,
+                total,
+                percentage
             );
         } else {
-            println!("Downloaded: {} bytes", downloaded);
+            tracing::info!("Downloaded: {} bytes", downloaded);
         }
     }
 
     fn finish(&mut self) {
-        println!("Download complete!");
+        tracing::info!("Download complete!");
     }
 }
 
@@ -104,7 +106,7 @@ pub fn fetch_with_progress<T: ProgressTracker>(
 
     match url.scheme() {
         "http" | "https" => fetch_http(&url, destination, progress),
-        scheme => anyhow::bail!("Unsupported URL scheme: {}", scheme),
+        scheme => eyre::bail!("Unsupported URL scheme: {}", scheme),
     }?;
 
     if let Some(checksum) = checksum {
@@ -119,8 +121,6 @@ fn fetch_http<T: ProgressTracker>(
     destination: &PathBuf,
     progress: &mut T,
 ) -> Result<()> {
-    println!("Fetching from: {}", url);
-
     // Detect if the URL points to an archive
     let archive_format = ArchiveFormat::detect(url);
 
@@ -135,7 +135,7 @@ fn fetch_http<T: ProgressTracker>(
         .with_context(|| format!("Failed to download from: {}", url))?;
 
     if !response.status().is_success() {
-        anyhow::bail!("HTTP request failed with status: {}", response.status());
+        eyre::bail!("HTTP request failed with status: {}", response.status());
     }
 
     // Get the content length if available
@@ -148,7 +148,7 @@ fn fetch_http<T: ProgressTracker>(
 
     match archive_format {
         ArchiveFormat::TarGz => {
-            println!("Detected tar.gz archive, streaming decompression...");
+            tracing::info!("Detected tar.gz archive, streaming decompression...");
             extract_tar_gz(&mut progress_reader, destination)?;
         }
         ArchiveFormat::None => {
@@ -167,7 +167,7 @@ fn fetch_http<T: ProgressTracker>(
 
 /// Verify the SHA-256 checksum of a file
 fn verify_checksum(file_path: &Path, expected_checksum: &str) -> Result<()> {
-    println!("Verifying checksum");
+    tracing::info!("Verifying checksum");
 
     let mut file = File::open(file_path).with_context(|| {
         format!(
@@ -183,14 +183,14 @@ fn verify_checksum(file_path: &Path, expected_checksum: &str) -> Result<()> {
     let computed_hash = format!("{:x}", hasher.finalize());
 
     if computed_hash != expected_checksum {
-        anyhow::bail!(
+        eyre::bail!(
             "Checksum verification failed!\nExpected: {}\nComputed: {}",
             expected_checksum,
             computed_hash
         );
     }
 
-    println!("✓ Checksum verified: {}", computed_hash);
+    tracing::info!("✓ Checksum verified: {}", computed_hash);
     Ok(())
 }
 
@@ -251,11 +251,13 @@ mod tests {
         // Clean up any existing file
         let _ = fs::remove_file(&destination);
 
-        // Download the file
-        let result = fetch(source, &destination, None);
+        // Download the file with checksum verification
+        // Expected SHA-256 checksum for the README.md file
+        let checksum = "79dcadb1ef725cbc30bb3a9a877cff3702e9d3bb28baff74265a9d70a2e8874b";
+        let result = fetch(source, &destination, Some(checksum.to_string()));
         assert!(
             result.is_ok(),
-            "Failed to download file: {:?}",
+            "Failed to download file or verify checksum: {:?}",
             result.err()
         );
 

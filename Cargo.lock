@@ -1761,12 +1761,14 @@ dependencies = [
 name = "fetcher"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "clap",
+ "eyre",
  "flate2",
  "reqwest",
  "sha2",
  "tar",
+ "tracing",
+ "tracing-subscriber",
  "url",
 ]
 
