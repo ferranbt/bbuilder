@@ -4,7 +4,9 @@ use futures_util::stream::StreamExt;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::net::TcpListener;
+use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
+use tokio::time;
 
 use runtime_trait::Runtime;
 use spec::{File, Manifest};
@@ -67,10 +69,7 @@ impl DockerRuntime {
             let docker = Docker::connect_with_local_defaults().unwrap();
 
             // Filter for container events only
-            let filters = HashMap::from([
-                ("type", vec!["container"]),
-                ("label", vec!["bbuilder=true"]),
-            ]);
+            let filters = HashMap::from([("label", vec!["bbuilder=true"])]);
             let options = EventsOptionsBuilder::new().filters(&filters).build();
 
             let mut events = docker.events(Some(options));
@@ -295,18 +294,40 @@ impl Runtime for DockerRuntime {
             serde_yaml::to_string(&docker_compose_spec)?,
         )?;
 
-        /*
         // Run docker-compose up in detached mode
         Command::new("docker-compose")
             .arg("-f")
             .arg(&compose_file_path)
             .arg("up")
             .arg("-d")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
             .status()?;
-        */
+
+        println!("Starting to wait");
+        tokio::time::sleep(time::Duration::from_secs(10)).await;
 
         Ok(())
     }
+}
+
+struct DeploymentWatcher {
+    manifest: Manifest,
+    tasks: HashMap<String, Task>,
+}
+
+#[derive(Default)]
+enum TaskStatus {
+    #[default]
+    Pending,
+}
+
+struct Task {
+    status: TaskStatus,
+}
+
+impl DeploymentWatcher {
+    fn update_task_status(&self, task_name: String, status: TaskStatus) {}
 }
 
 #[cfg(test)]
