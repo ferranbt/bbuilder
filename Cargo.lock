@@ -976,6 +976,8 @@ dependencies = [
  "serde_json",
  "spec",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -3586,6 +3588,7 @@ dependencies = [
  "spec",
  "tinytemplate",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
