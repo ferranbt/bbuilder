@@ -1,12 +1,11 @@
 use bollard::Docker;
 use bollard::query_parameters::EventsOptionsBuilder;
+use futures_util::future::join_all;
 use futures_util::stream::StreamExt;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::net::TcpListener;
-use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
-use tokio::time;
 
 use runtime_trait::Runtime;
 use spec::{File, Manifest};
@@ -15,6 +14,7 @@ use crate::compose::Volume;
 use crate::compose::{
     DependsOnCondition, DockerComposeService, DockerComposeSpec, Port, ServiceVolume,
 };
+use crate::image_puller::ImagePuller;
 
 #[derive(Clone)]
 struct ReservedPorts {
@@ -73,23 +73,22 @@ impl DockerRuntime {
             let options = EventsOptionsBuilder::new().filters(&filters).build();
 
             let mut events = docker.events(Some(options));
-            println!("Listening for container events...");
+            tracing::debug!("Listening for container events...");
 
             while let Some(event_result) = events.next().await {
                 match event_result {
                     Ok(event) => {
-                        println!("Event: {:?}", event.action);
+                        tracing::debug!("Event: {:?}", event.action);
                         if let Some(actor) = event.actor {
-                            println!("  Container ID: {:?}", actor.id);
+                            tracing::debug!("  Container ID: {:?}", actor.id);
                             if let Some(attrs) = actor.attributes {
                                 if let Some(name) = attrs.get("name") {
-                                    println!("  Container Name: {}", name);
+                                    tracing::debug!("  Container Name: {}", name);
                                 }
                             }
                         }
-                        println!();
                     }
-                    Err(e) => eprintln!("Error: {}", e),
+                    Err(e) => tracing::error!("Error: {}", e),
                 }
             }
         });
@@ -98,6 +97,64 @@ impl DockerRuntime {
             dir_path,
             reserved_ports: ReservedPorts::new(),
         }
+    }
+
+    async fn pull_images(&self, spec: &DockerComposeSpec) -> eyre::Result<()> {
+        let docker = Docker::connect_with_local_defaults()?;
+        let puller = ImagePuller::new(docker.clone());
+
+        // Collect all unique images from the spec
+        let mut images = HashSet::new();
+        for service in spec.services.values() {
+            images.insert(service.image.clone());
+        }
+
+        // Check which images are not available locally
+        let mut images_to_pull = Vec::new();
+        for image in images {
+            match docker.inspect_image(&image).await {
+                Ok(_) => {
+                    // Image exists locally
+                    tracing::debug!("Image {} already exists locally", image);
+                }
+                Err(bollard::errors::Error::DockerResponseServerError {
+                    status_code: 404, ..
+                }) => {
+                    tracing::debug!("Image {} not found locally, will pull", image);
+                    images_to_pull.push(image);
+                }
+                Err(_) => {
+                    // For other errors (like JSON parse errors), assume image exists
+                }
+            }
+        }
+
+        if images_to_pull.is_empty() {
+            tracing::debug!("All images are already available locally");
+            return Ok(());
+        }
+
+        // Pull all missing images concurrently using join_all
+        tracing::info!("Pulling {} images in parallel...", images_to_pull.len());
+        let futures: Vec<_> = images_to_pull
+            .iter()
+            .map(|img| puller.pull_image(img))
+            .collect();
+        let results = join_all(futures).await;
+
+        // Check if all pulls succeeded
+        for (i, result) in results.iter().enumerate() {
+            if let Err(e) = result {
+                return Err(eyre::eyre!(
+                    "Failed to pull image {}: {}",
+                    images_to_pull[i],
+                    e
+                ));
+            }
+        }
+
+        tracing::info!("Successfully pulled all images");
+        Ok(())
     }
 
     fn convert_to_docker_compose_spec(
@@ -287,6 +344,9 @@ impl Runtime for DockerRuntime {
 
         let docker_compose_spec = self.convert_to_docker_compose_spec(manifest)?;
 
+        // Pull images before running docker-compose
+        self.pull_images(&docker_compose_spec).await?;
+
         // Write the compose file in the parent folder
         let compose_file_path = parent_folder.join("docker-compose.yaml");
         std::fs::write(
@@ -294,6 +354,7 @@ impl Runtime for DockerRuntime {
             serde_yaml::to_string(&docker_compose_spec)?,
         )?;
 
+        /*
         // Run docker-compose up in detached mode
         Command::new("docker-compose")
             .arg("-f")
@@ -304,30 +365,12 @@ impl Runtime for DockerRuntime {
             .stderr(Stdio::null())
             .status()?;
 
-        println!("Starting to wait");
+        tracing::debug!("Starting to wait");
         tokio::time::sleep(time::Duration::from_secs(10)).await;
+        */
 
         Ok(())
     }
-}
-
-struct DeploymentWatcher {
-    manifest: Manifest,
-    tasks: HashMap<String, Task>,
-}
-
-#[derive(Default)]
-enum TaskStatus {
-    #[default]
-    Pending,
-}
-
-struct Task {
-    status: TaskStatus,
-}
-
-impl DeploymentWatcher {
-    fn update_task_status(&self, task_name: String, status: TaskStatus) {}
 }
 
 #[cfg(test)]
