@@ -1,5 +1,5 @@
 use bollard::Docker;
-use bollard::query_parameters::EventsOptionsBuilder;
+use bollard::query_parameters::{CreateImageOptions, EventsOptionsBuilder};
 use futures_util::future::join_all;
 use futures_util::stream::StreamExt;
 use std::collections::HashMap;
@@ -14,7 +14,6 @@ use crate::compose::Volume;
 use crate::compose::{
     DependsOnCondition, DockerComposeService, DockerComposeSpec, Port, ServiceVolume,
 };
-use crate::image_puller::ImagePuller;
 
 #[derive(Clone)]
 struct ReservedPorts {
@@ -101,7 +100,6 @@ impl DockerRuntime {
 
     async fn pull_images(&self, spec: &DockerComposeSpec) -> eyre::Result<()> {
         let docker = Docker::connect_with_local_defaults()?;
-        let puller = ImagePuller::new(docker.clone());
 
         // Collect all unique images from the spec
         let mut images = HashSet::new();
@@ -136,10 +134,32 @@ impl DockerRuntime {
 
         // Pull all missing images concurrently using join_all
         tracing::info!("Pulling {} images in parallel...", images_to_pull.len());
+        let docker_clone = docker.clone();
         let futures: Vec<_> = images_to_pull
             .iter()
-            .map(|img| puller.pull_image(img))
+            .map(|image| {
+                let docker = docker_clone.clone();
+                let image = image.clone();
+                async move {
+                    let options = CreateImageOptions {
+                        from_image: Some(image.clone()),
+                        ..Default::default()
+                    };
+
+                    let mut stream = docker.create_image(Some(options), None, None);
+
+                    // Consume the output to ensure pull completes
+                    while let Some(result) = stream.next().await {
+                        if let Err(e) = result {
+                            return Err(format!("error during image pull {}: {}", image, e));
+                        }
+                    }
+
+                    Ok(())
+                }
+            })
             .collect();
+
         let results = join_all(futures).await;
 
         // Check if all pulls succeeded
@@ -551,6 +571,66 @@ mod tests {
         assert_eq!(service.labels.get("app"), Some(&"myapp".to_string()));
         assert_eq!(service.labels.get("env"), Some(&"production".to_string()));
         assert_eq!(service.labels.get("bbuilder"), Some(&"true".to_string()));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_pull_multiple_images() -> eyre::Result<()> {
+        use bollard::query_parameters::RemoveImageOptions;
+
+        let docker = Docker::connect_with_local_defaults()?;
+        let images = vec!["alpine:3.18", "alpine:3.19", "alpine:3.20"];
+
+        // Ensure images don't exist
+        for image in &images {
+            let _ = docker
+                .remove_image(
+                    image,
+                    Some(RemoveImageOptions {
+                        force: true,
+                        ..Default::default()
+                    }),
+                    None,
+                )
+                .await;
+        }
+
+        // Create a docker compose spec with multiple services using different images
+        let mut services = HashMap::new();
+        for (i, image) in images.iter().enumerate() {
+            let service = DockerComposeService {
+                image: image.to_string(),
+                ..Default::default()
+            };
+            services.insert(format!("service-{}", i), service);
+        }
+
+        let docker_compose_spec = DockerComposeSpec {
+            services,
+            networks: HashMap::new(),
+            volumes: HashMap::new(),
+        };
+
+        // Test pull_images
+        let temp_dir = std::env::temp_dir().join("test-runtime-pull");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir)?;
+        let runtime = DockerRuntime::new(temp_dir.to_str().unwrap().to_string());
+
+        let result = runtime.pull_images(&docker_compose_spec).await;
+        assert!(result.is_ok(), "Failed to pull images: {:?}", result);
+
+        // Verify all images were pulled
+        for image in &images {
+            let inspect_result = docker.inspect_image(image).await;
+            assert!(
+                inspect_result.is_ok(),
+                "Image {} should exist after pull",
+                image
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
         Ok(())
     }
 }
