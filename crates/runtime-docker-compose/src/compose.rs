@@ -106,9 +106,11 @@ pub(crate) struct Volume {
     pub driver: Option<String>,
 
     #[serde(skip_serializing_if = "HashMap::is_empty")]
+    #[serde(default)]
     pub driver_opts: HashMap<String, String>,
 
     #[serde(skip_serializing_if = "HashMap::is_empty")]
+    #[serde(default)]
     pub labels: HashMap<String, String>,
 }
 
