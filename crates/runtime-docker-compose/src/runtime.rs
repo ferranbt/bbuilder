@@ -3,15 +3,14 @@ use bollard::query_parameters::{CreateImageOptions, EventsOptionsBuilder};
 use futures_util::future::join_all;
 use futures_util::stream::StreamExt;
 use spec::{File, Manifest};
-use std::collections::HashMap;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::net::TcpListener;
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 
 use crate::compose::Volume;
 use crate::compose::{
-    DependsOnCondition, DockerComposeService, DockerComposeSpec, Port, ServiceVolume,
+    DependsOn, DependsOnCondition, DockerComposeService, DockerComposeSpec, Port, ServiceVolume,
 };
 
 #[derive(Clone)]
@@ -56,6 +55,33 @@ impl ReservedPorts {
     }
 }
 
+fn load_reserved_ports(dir_path: &str, reserved_ports: &ReservedPorts) -> eyre::Result<()> {
+    // Read existing docker-compose.yaml files and reserve their ports
+    if let Ok(entries) = std::fs::read_dir(dir_path) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                let compose_file = path.join("docker-compose.yaml");
+                if compose_file.exists() {
+                    if let Ok(content) = std::fs::read_to_string(&compose_file) {
+                        let spec = serde_yaml::from_str::<DockerComposeSpec>(&content)?;
+                        // Extract all host ports from the spec
+                        for service in spec.services.values() {
+                            for port in &service.ports {
+                                if let Some(host_port) = port.host {
+                                    reserved_ports.reserve_port(host_port);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
 pub struct DockerRuntime {
     dir_path: String,
     reserved_ports: ReservedPorts,
@@ -91,9 +117,12 @@ impl DockerRuntime {
             }
         });
 
+        let reserved_ports = ReservedPorts::new();
+        load_reserved_ports(&dir_path, &reserved_ports).unwrap();
+
         Self {
             dir_path,
-            reserved_ports: ReservedPorts::new(),
+            reserved_ports,
         }
     }
 
@@ -195,7 +224,7 @@ impl DockerRuntime {
                 let mut ports = vec![];
                 let mut command = vec![];
                 let mut service_volumes = vec![];
-                let mut init_services = HashMap::new();
+                let mut init_services = BTreeMap::new();
                 let mut artifacts_to_process = vec![];
                 let mut environment = HashMap::new();
 
@@ -299,7 +328,11 @@ impl DockerRuntime {
                                 services.insert(init_service_name.clone(), init_service);
                                 init_services.insert(
                                     init_service_name,
-                                    Some(DependsOnCondition::ServiceCompletedSuccessfully),
+                                    DependsOn {
+                                        condition: Some(
+                                            DependsOnCondition::ServiceCompletedSuccessfully,
+                                        ),
+                                    },
                                 );
                             } else {
                                 let target_host_path = absolute_config_path.join(name);
@@ -483,6 +516,30 @@ mod tests {
         // Reserve another port
         let port3 = reserved_ports.reserve_port(8545);
         assert_eq!(port3, Some(8547));
+    }
+
+    #[test]
+    fn test_load_reserved_ports() -> eyre::Result<()> {
+        let fixtures_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("fixtures")
+            .join("test-load-reserved-ports");
+
+        let reserved_ports = ReservedPorts::new();
+        load_reserved_ports(fixtures_dir.to_str().unwrap(), &reserved_ports)?;
+
+        // Verify that ports from the fixture files are reserved
+        // service1 has ports 8080 and 9000
+        // service2 has port 3000
+        let port1 = reserved_ports.reserve_port(8080);
+        assert_eq!(port1, Some(8081), "Port 8080 should already be reserved");
+
+        let port2 = reserved_ports.reserve_port(9000);
+        assert_eq!(port2, Some(9001), "Port 9000 should already be reserved");
+
+        let port3 = reserved_ports.reserve_port(3000);
+        assert_eq!(port3, Some(3001), "Port 3000 should already be reserved");
+
+        Ok(())
     }
 
     #[tokio::test]

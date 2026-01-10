@@ -1,55 +1,106 @@
-use serde::ser::SerializeMap;
-use serde::{Serialize, Serializer};
-use std::collections::HashMap;
+use serde::de::{self, Deserializer, Visitor};
+use serde::{Deserialize, Serialize, Serializer};
+use std::collections::{BTreeMap, HashMap};
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub(crate) struct DockerComposeSpec {
     pub services: HashMap<String, DockerComposeService>,
 
+    #[serde(default)]
     #[serde(skip_serializing_if = "HashMap::is_empty")]
     pub networks: HashMap<String, Option<Network>>,
 
+    #[serde(default)]
     #[serde(skip_serializing_if = "HashMap::is_empty")]
     pub volumes: HashMap<String, Option<Volume>>,
 }
 
-#[derive(Serialize, Default)]
+#[derive(Serialize, Deserialize, Default)]
 pub(crate) struct DockerComposeService {
     pub image: String,
 
+    #[serde(default)]
     pub command: Vec<String>,
 
+    #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub entrypoint: Vec<String>,
 
+    #[serde(default)]
     #[serde(skip_serializing_if = "HashMap::is_empty")]
     pub labels: HashMap<String, String>,
 
+    #[serde(default)]
     #[serde(skip_serializing_if = "HashMap::is_empty")]
     pub environment: HashMap<String, String>,
 
+    #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub ports: Vec<Port>,
 
+    #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub networks: Vec<String>,
 
+    #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    #[serde(serialize_with = "serialize_service_volume")]
     pub volumes: Vec<ServiceVolume>,
 
-    #[serde(skip_serializing_if = "HashMap::is_empty")]
-    #[serde(serialize_with = "serialize_depends_on")]
-    pub depends_on: HashMap<String, Option<DependsOnCondition>>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub depends_on: BTreeMap<String, DependsOn>,
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub(crate) struct ServiceVolume {
     pub host: String,
     pub target: String,
 }
 
-#[derive(Serialize, Default)]
+impl Serialize for ServiceVolume {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        format!("{}:{}", self.host, self.target).serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for ServiceVolume {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct ServiceVolumeVisitor;
+
+        impl<'de> Visitor<'de> for ServiceVolumeVisitor {
+            type Value = ServiceVolume;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a volume mapping string like '/host/path:/container/path'")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                let parts: Vec<&str> = value.split(':').collect();
+                if parts.len() >= 2 {
+                    Ok(ServiceVolume {
+                        host: parts[0].to_string(),
+                        target: parts[1].to_string(),
+                    })
+                } else {
+                    Err(E::custom("invalid volume mapping format"))
+                }
+            }
+        }
+
+        deserializer.deserialize_str(ServiceVolumeVisitor)
+    }
+}
+
+#[derive(Serialize, Deserialize, Default)]
 pub(crate) struct Volume {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub driver: Option<String>,
@@ -61,58 +112,61 @@ pub(crate) struct Volume {
     pub labels: HashMap<String, String>,
 }
 
-#[derive(Serialize, Default)]
+#[derive(Serialize, Deserialize, Default)]
 pub(crate) struct Network {}
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum DependsOnCondition {
     ServiceCompletedSuccessfully,
 }
 
-fn serialize_depends_on<S>(
-    map: &HashMap<String, Option<DependsOnCondition>>,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: serde::Serializer,
-{
-    use serde::Serialize;
+#[derive(Default, Debug)]
+pub(crate) struct DependsOn {
+    pub condition: Option<DependsOnCondition>,
+}
 
-    let mut map_serializer = serializer.serialize_map(Some(map.len()))?;
-    for (key, value) in map {
-        match value {
+impl Serialize for DependsOn {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match &self.condition {
             None => {
                 // Serialize as empty map for simple dependency
-                map_serializer.serialize_entry(key, &())?;
+                ().serialize(serializer)
             }
             Some(condition) => {
                 #[derive(Serialize)]
                 struct WithCondition<'a> {
                     condition: &'a DependsOnCondition,
                 }
-                map_serializer.serialize_entry(key, &WithCondition { condition })?;
+                WithCondition { condition }.serialize(serializer)
             }
         }
     }
-    map_serializer.end()
 }
 
-fn serialize_service_volume<S>(
-    volumes: &Vec<ServiceVolume>,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    use serde::ser::SerializeSeq;
+impl<'de> Deserialize<'de> for DependsOn {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WithCondition {
+            condition: DependsOnCondition,
+        }
 
-    let mut seq = serializer.serialize_seq(Some(volumes.len()))?;
-    for volume in volumes {
-        let volume_str = format!("{}:{}", volume.host, volume.target);
-        seq.serialize_element(&volume_str)?;
+        // Try to deserialize as a map with condition
+        if let Ok(value) = WithCondition::deserialize(deserializer) {
+            Ok(DependsOn {
+                condition: Some(value.condition),
+            })
+        } else {
+            // Simple dependency without condition
+            Ok(DependsOn { condition: None })
+        }
     }
-    seq.end()
 }
 
 #[derive(Debug)]
@@ -138,25 +192,99 @@ impl Serialize for Port {
     }
 }
 
+impl<'de> Deserialize<'de> for Port {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct PortVisitor;
+
+        impl<'de> Visitor<'de> for PortVisitor {
+            type Value = Port;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a port mapping string like '8080:80' or '80'")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                let parts: Vec<&str> = value.split(':').collect();
+                match parts.len() {
+                    1 => {
+                        let container = parts[0]
+                            .parse()
+                            .map_err(|_| E::custom("invalid container port"))?;
+                        Ok(Port {
+                            host: None,
+                            container,
+                        })
+                    }
+                    2 => {
+                        let host = parts[0]
+                            .parse()
+                            .map_err(|_| E::custom("invalid host port"))?;
+                        let container = parts[1]
+                            .parse()
+                            .map_err(|_| E::custom("invalid container port"))?;
+                        Ok(Port {
+                            host: Some(host),
+                            container,
+                        })
+                    }
+                    _ => Err(E::custom("invalid port mapping format")),
+                }
+            }
+        }
+
+        deserializer.deserialize_str(PortVisitor)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_docker_compose_spec_with_volumes() {
+    fn test_docker_compose_spec_serialize() {
         let mut spec = DockerComposeSpec {
             services: HashMap::new(),
             networks: HashMap::new(),
             volumes: HashMap::new(),
         };
 
+        let mut depends_on = BTreeMap::new();
+        depends_on.insert(
+            "db".to_string(),
+            DependsOn {
+                condition: Some(DependsOnCondition::ServiceCompletedSuccessfully),
+            },
+        );
+        depends_on.insert("cache".to_string(), DependsOn { condition: None });
+
         let service = DockerComposeService {
             image: "test-image:latest".to_string(),
             command: vec![],
+            ports: vec![
+                Port {
+                    host: Some(8080),
+                    container: 80,
+                },
+                Port {
+                    host: Some(9000),
+                    container: 9000,
+                },
+                Port {
+                    host: None,
+                    container: 3000,
+                },
+            ],
             volumes: vec![ServiceVolume {
                 host: "/host/path".to_string(),
                 target: "/container/path".to_string(),
             }],
+            depends_on,
             ..Default::default()
         };
         spec.services.insert("test-service".to_string(), service);
@@ -178,5 +306,14 @@ mod tests {
         let yaml = serde_yaml::to_string(&spec).unwrap();
         let expected = include_str!("../fixtures/docker-compose-with-volumes.yaml");
         assert_eq!(yaml.trim(), expected.trim());
+    }
+
+    #[test]
+    fn test_deserialize_and_serialize_roundtrip() {
+        let original_yaml = include_str!("../fixtures/docker-compose-with-volumes.yaml");
+
+        let spec: DockerComposeSpec = serde_yaml::from_str(original_yaml).unwrap();
+        let serialized_yaml = serde_yaml::to_string(&spec).unwrap();
+        assert_eq!(serialized_yaml.trim(), original_yaml.trim());
     }
 }

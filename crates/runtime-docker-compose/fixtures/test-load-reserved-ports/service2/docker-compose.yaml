@@ -1,0 +1,6 @@
+services:
+  app:
+    image: myapp:latest
+    command: []
+    ports:
+    - 3000:3000
