@@ -8,7 +8,8 @@ members = [
     "crates/catalog",
     "crates/template",
     "crates/babel",
-    "crates/fetcher"
+    "crates/fetcher",
+    "crates/cosmos-keys"
 ]
 
 [workspace.dependencies]
@@ -17,6 +18,7 @@ runtime-docker-compose = { path = "crates/runtime-docker-compose" }
 runtime-trait = { path = "crates/runtime-trait" }
 catalog = { path = "crates/catalog" }
 template = { path = "crates/template" }
+cosmos-keys = { path = "crates/cosmos-keys" }
 
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.9.34"

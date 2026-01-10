@@ -12,10 +12,5 @@ serde_json.workspace = true
 tokio.workspace = true
 askama.workspace = true
 template.workspace = true
+cosmos-keys.workspace = true
 reqwest = { version = "0.12", features = ["blocking"] }
-ed25519-dalek = { version = "2.2.0", features = ["rand_core"] }
-base64 = "0.22"
-rand = "0.8"
-k256 = { version = "0.13", features = ["ecdsa"] }
-sha3 = "0.10"
-hex = "0.4"
