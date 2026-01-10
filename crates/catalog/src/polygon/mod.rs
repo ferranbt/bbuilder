@@ -1,9 +1,5 @@
-use base64::{Engine as _, engine::general_purpose};
-use ed25519_dalek::SigningKey;
-use k256::ecdsa::SigningKey as kSigningKey;
-use rand::rngs::OsRng;
+use cosmos_keys::{generate_cometbft_key, generate_tendermint_key};
 use serde::{Deserialize, Serialize};
-use sha3::{Digest, Keccak256};
 use spec::{Arg, Artifacts, Babel, ComputeResource, Deployment, Manifest, Pod, Spec, Volume};
 use template::Template;
 
@@ -49,8 +45,8 @@ impl ComputeResource for Heimdall {
             chain: chain.cosmos_chain_id().to_string(),
         };
 
-        let keys = generate_tendermint_key();
-        let val_keys = generate_cometbft_key();
+        let keys = generate_tendermint_key().serialize()?;
+        let val_keys = generate_cometbft_key().serialize()?;
 
         let val_keys_state = "{
   \"height\": \"0\",
@@ -113,93 +109,6 @@ impl ComputeResource for Heimdall {
 
         Ok(Pod::default().with_spec("node", node))
     }
-}
-
-#[derive(Serialize, Deserialize)]
-struct PrivKeyWrapper {
-    priv_key: PrivKey,
-}
-
-#[derive(Serialize, Deserialize)]
-struct PrivKey {
-    #[serde(rename = "type")]
-    key_type: String,
-    value: String,
-}
-
-fn generate_tendermint_key() -> String {
-    let signing_key = SigningKey::generate(&mut OsRng);
-    let private_bytes = signing_key.to_bytes();
-    let public_bytes = signing_key.verifying_key().to_bytes();
-
-    let mut combined = Vec::with_capacity(64);
-    combined.extend_from_slice(&private_bytes);
-    combined.extend_from_slice(&public_bytes);
-
-    let encoded = general_purpose::STANDARD.encode(&combined);
-
-    let key_wrapper = PrivKeyWrapper {
-        priv_key: PrivKey {
-            key_type: "tendermint/PrivKeyEd25519".to_string(),
-            value: encoded,
-        },
-    };
-
-    serde_json::to_string(&key_wrapper).unwrap()
-}
-
-#[derive(Serialize, Deserialize)]
-struct ValidatorKey {
-    address: String,
-    pub_key: PubKey2,
-    priv_key: PrivKey2,
-}
-
-#[derive(Serialize, Deserialize)]
-struct PubKey2 {
-    #[serde(rename = "type")]
-    key_type: String,
-    value: String,
-}
-
-#[derive(Serialize, Deserialize)]
-struct PrivKey2 {
-    #[serde(rename = "type")]
-    key_type: String,
-    value: String,
-}
-
-fn generate_cometbft_key() -> String {
-    // Generate secp256k1 key pair
-    let signing_key = kSigningKey::random(&mut OsRng);
-    let verifying_key = signing_key.verifying_key();
-
-    // Get private key bytes (32 bytes)
-    let private_bytes = signing_key.to_bytes();
-    let priv_base64 = general_purpose::STANDARD.encode(&private_bytes);
-
-    // Get public key bytes (uncompressed, 65 bytes)
-    let public_bytes = verifying_key.to_encoded_point(false);
-    let pub_base64 = general_purpose::STANDARD.encode(public_bytes.as_bytes());
-
-    // Generate address: first 20 bytes of keccak256(public_key)
-    let hash = Keccak256::digest(&public_bytes.as_bytes()[1..]); // Skip the 0x04 prefix
-    let address_bytes = &hash[12..]; // Take last 20 bytes
-    let address = hex::encode_upper(address_bytes);
-
-    let validator_key = ValidatorKey {
-        address,
-        pub_key: PubKey2 {
-            key_type: "cometbft/PubKeySecp256k1eth".to_string(),
-            value: pub_base64,
-        },
-        priv_key: PrivKey2 {
-            key_type: "cometbft/PrivKeySecp256k1eth".to_string(),
-            value: priv_base64,
-        },
-    };
-
-    serde_json::to_string_pretty(&validator_key).unwrap()
 }
 
 #[derive(Template, Serialize)]
