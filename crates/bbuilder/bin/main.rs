@@ -1,7 +1,6 @@
 use clap::{Parser, Subcommand};
 use runtime_docker_compose::DockerRuntime;
-use runtime_trait::Runtime;
-use spec::{Dep, Manifest};
+use spec::Dep;
 use std::fs;
 
 #[derive(Parser)]
@@ -25,6 +24,9 @@ enum Commands {
         /// Name for the deployment
         #[arg(short, long)]
         name: Option<String>,
+        /// Dry run mode - generate files without starting containers
+        #[arg(long)]
+        dry_run: bool,
     },
 }
 
@@ -35,7 +37,7 @@ async fn main() -> eyre::Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Run { filename, name } => run_command(filename, name, cli.config_folder).await?,
+        Commands::Run { filename, name, dry_run } => run_command(filename, name, cli.config_folder, dry_run).await?,
     }
 
     Ok(())
@@ -45,6 +47,7 @@ async fn run_command(
     filename: String,
     name: Option<String>,
     config_folder: String,
+    dry_run: bool,
 ) -> eyre::Result<()> {
     let contents = fs::read_to_string(&filename)?;
     let input: Dep = serde_json::from_str(contents.as_str())?;
@@ -72,22 +75,8 @@ async fn run_command(
         .to_string_lossy()
         .to_string();
 
-    let svc = Service::new(DockerRuntime::new(docker_runtime_path));
-    svc.deploy(manifest).await?;
+    let runtime = DockerRuntime::new(docker_runtime_path);
+    runtime.run(manifest, dry_run).await?;
 
     Ok(())
-}
-
-struct Service {
-    runtime: DockerRuntime,
-}
-
-impl Service {
-    fn new(runtime: DockerRuntime) -> Self {
-        Self { runtime }
-    }
-
-    async fn deploy(&self, manifest: Manifest) -> eyre::Result<()> {
-        self.runtime.run(manifest).await
-    }
 }
