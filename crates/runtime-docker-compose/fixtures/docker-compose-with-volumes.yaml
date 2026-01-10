@@ -2,8 +2,16 @@ services:
   test-service:
     image: test-image:latest
     command: []
+    ports:
+    - 8080:80
+    - 9000:9000
+    - '3000'
     volumes:
     - /host/path:/container/path
+    depends_on:
+      cache: null
+      db:
+        condition: service_completed_successfully
 networks:
   test: null
 volumes:
