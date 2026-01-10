@@ -4,7 +4,6 @@ members = [
     "crates/bbuilder",
     "crates/spec",
     "crates/runtime-docker-compose",
-    "crates/runtime-trait",
     "crates/catalog",
     "crates/template",
     "crates/babel",

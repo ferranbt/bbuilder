@@ -971,7 +971,6 @@ dependencies = [
  "clap",
  "eyre",
  "runtime-docker-compose",
- "runtime-trait",
  "serde",
  "serde_json",
  "spec",
@@ -3592,22 +3591,12 @@ dependencies = [
  "eyre",
  "futures-util",
  "include_dir",
- "runtime-trait",
  "serde",
  "serde_yaml",
  "spec",
  "tinytemplate",
  "tokio",
  "tracing",
-]
-
-[[package]]
-name = "runtime-trait"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "eyre",
- "spec",
 ]
 
 [[package]]

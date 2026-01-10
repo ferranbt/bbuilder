@@ -6,7 +6,6 @@ edition = "2024"
 [dependencies]
 spec.workspace = true
 runtime-docker-compose.workspace = true
-runtime-trait.workspace = true
 tokio.workspace = true
 eyre.workspace = true
 serde_json.workspace = true

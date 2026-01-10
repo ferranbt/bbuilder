@@ -2,13 +2,12 @@ use bollard::Docker;
 use bollard::query_parameters::{CreateImageOptions, EventsOptionsBuilder};
 use futures_util::future::join_all;
 use futures_util::stream::StreamExt;
+use spec::{File, Manifest};
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::net::TcpListener;
+use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
-
-use runtime_trait::Runtime;
-use spec::{File, Manifest};
 
 use crate::compose::Volume;
 use crate::compose::{
@@ -351,11 +350,8 @@ impl DockerRuntime {
             volumes,
         })
     }
-}
 
-#[async_trait::async_trait]
-impl Runtime for DockerRuntime {
-    async fn run(&self, manifest: Manifest) -> eyre::Result<()> {
+    pub async fn run(&self, manifest: Manifest, dry_run: bool) -> eyre::Result<()> {
         let name = manifest.name.clone();
 
         // Create the parent folder path
@@ -374,20 +370,17 @@ impl Runtime for DockerRuntime {
             serde_yaml::to_string(&docker_compose_spec)?,
         )?;
 
-        /*
         // Run docker-compose up in detached mode
-        Command::new("docker-compose")
-            .arg("-f")
-            .arg(&compose_file_path)
-            .arg("up")
-            .arg("-d")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()?;
-
-        tracing::debug!("Starting to wait");
-        tokio::time::sleep(time::Duration::from_secs(10)).await;
-        */
+        if !dry_run {
+            Command::new("docker-compose")
+                .arg("-f")
+                .arg(&compose_file_path)
+                .arg("up")
+                .arg("-d")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()?;
+        }
 
         Ok(())
     }
