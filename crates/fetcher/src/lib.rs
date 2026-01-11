@@ -241,34 +241,113 @@ fn extract_tar_gz<R: Read>(reader: R, destination: &Path) -> Result<()> {
 mod tests {
     use super::*;
     use std::fs;
+    use std::sync::{Arc, Mutex};
+
+    struct TestProgressTracker {
+        set_total_called: Arc<Mutex<bool>>,
+        update_called: Arc<Mutex<bool>>,
+        finish_called: Arc<Mutex<bool>>,
+    }
+
+    impl TestProgressTracker {
+        fn new() -> Self {
+            Self {
+                set_total_called: Arc::new(Mutex::new(false)),
+                update_called: Arc::new(Mutex::new(false)),
+                finish_called: Arc::new(Mutex::new(false)),
+            }
+        }
+
+        fn assert_ok(&self) {
+            assert!(
+                *self.set_total_called.lock().unwrap(),
+                "set_total was not called",
+            );
+            assert!(*self.update_called.lock().unwrap(), "update was not called",);
+            assert!(*self.finish_called.lock().unwrap(), "finish was not called",);
+        }
+    }
+
+    impl ProgressTracker for TestProgressTracker {
+        fn set_total(&mut self, _total: u64) {
+            *self.set_total_called.lock().unwrap() = true;
+        }
+
+        fn update(&mut self, _downloaded: u64) {
+            *self.update_called.lock().unwrap() = true;
+        }
+
+        fn finish(&mut self) {
+            *self.finish_called.lock().unwrap() = true;
+        }
+    }
+
+    fn get_fixture_path(filename: &str) -> String {
+        format!(
+            "https://raw.githubusercontent.com/ferranbt/bbuilder/refs/heads/main/crates/fetcher/fixtures/{}",
+            filename
+        )
+    }
+
+    fn ensure_fixture_file(path: &PathBuf) {
+        const CONTENT_TXT: &[u8] = include_bytes!("../fixtures/content.txt");
+        let actual_content = fs::read(path).expect(&format!("Failed to read file at {:?}", path));
+        assert_eq!(actual_content, CONTENT_TXT);
+    }
 
     #[test]
-    fn test_download_readme() {
-        let source =
-            "https://raw.githubusercontent.com/ferranbt/bbuilder/refs/heads/main/README.md";
-        let destination = PathBuf::from("/tmp/fetcher_test_readme.md");
+    fn test_download_content_txt() {
+        let filename = "content.txt";
+        let checksum = "3dc7bc0209231cc61cb7d09c2efdfdf7aacb1f0b098db150780e980fa10d6b7a";
 
-        // Clean up any existing file
+        let source = get_fixture_path(filename);
+        let destination = PathBuf::from(format!("/tmp/fetcher_test_{}", filename));
+
         let _ = fs::remove_file(&destination);
 
-        // Download the file with checksum verification
-        // Expected SHA-256 checksum for the README.md file
-        let checksum = "79dcadb1ef725cbc30bb3a9a877cff3702e9d3bb28baff74265a9d70a2e8874b";
-        let result = fetch(source, &destination, Some(checksum.to_string()));
+        let mut progress = TestProgressTracker::new();
+
+        let result = fetch_with_progress(
+            &source,
+            &destination,
+            &mut progress,
+            Some(checksum.to_string()),
+        );
         assert!(
             result.is_ok(),
-            "Failed to download file or verify checksum: {:?}",
+            "Failed to download {} or verify checksum: {:?}",
+            filename,
             result.err()
         );
 
-        // Verify the file exists
-        assert!(destination.exists(), "Downloaded file does not exist");
+        ensure_fixture_file(&destination);
+        progress.assert_ok();
 
-        // Verify the file has content
-        let content = fs::read_to_string(&destination).expect("Failed to read downloaded file");
-        assert!(!content.is_empty(), "Downloaded file is empty");
+        let _ = fs::remove_file(&destination);
+    }
 
-        // Clean up
+    #[test]
+    fn test_download_content_tar_gz() {
+        let filename = "content.tar.gz";
+
+        let source = get_fixture_path(filename);
+        let destination = PathBuf::from(format!("/tmp/fetcher_test_{}", filename));
+
+        let _ = fs::remove_file(&destination);
+
+        let mut progress = TestProgressTracker::new();
+
+        let result = fetch_with_progress(&source, &destination, &mut progress, None);
+        assert!(
+            result.is_ok(),
+            "Failed to download {} or verify checksum: {:?}",
+            filename,
+            result.err()
+        );
+
+        ensure_fixture_file(&destination.join("content.txt"));
+        progress.assert_ok();
+
         let _ = fs::remove_file(&destination);
     }
 }
