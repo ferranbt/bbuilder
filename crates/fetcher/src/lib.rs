@@ -270,7 +270,6 @@ mod tests {
         );
         let destination = PathBuf::from(format!("/tmp/fetcher_test_{}", filename));
 
-        // Clean up any existing file
         let _ = fs::remove_file(&destination);
 
         let set_total_called = Arc::new(Mutex::new(false));
@@ -283,7 +282,6 @@ mod tests {
             finish_called: finish_called.clone(),
         };
 
-        // Download the file with checksum verification and progress tracking
         let result = fetch_with_progress(
             &source,
             &destination,
@@ -297,19 +295,16 @@ mod tests {
             result.err()
         );
 
-        // Verify the file exists
         assert!(
             destination.exists(),
             "Downloaded file {} does not exist",
             filename
         );
 
-        // Verify the file has content
         let metadata = fs::metadata(&destination)
             .expect(&format!("Failed to read file metadata for {}", filename));
         assert!(metadata.len() > 0, "Downloaded file {} is empty", filename);
 
-        // Verify progress tracker methods were called
         assert!(
             *set_total_called.lock().unwrap(),
             "set_total was not called for {}",
@@ -326,7 +321,6 @@ mod tests {
             filename
         );
 
-        // Clean up
         let _ = fs::remove_file(&destination);
     }
 
