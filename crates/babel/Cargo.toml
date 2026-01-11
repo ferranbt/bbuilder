@@ -13,8 +13,10 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 eyre = { workspace = true }
 async-trait = { workspace = true }
+babel-api = { workspace = true }
 
 url = "2.5.7"
+jsonrpsee = { workspace = true }
 
 # HTTP server
 axum = "0.8"

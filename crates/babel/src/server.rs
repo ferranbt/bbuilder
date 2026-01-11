@@ -1,5 +1,5 @@
 use crate::{metrics::BabelMetrics, Babel, Status};
-use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::get, Json, Router};
+use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::get, Router};
 use metrics_exporter_prometheus::PrometheusHandle;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -20,19 +20,17 @@ impl BabelServer {
     pub fn new(babel: impl Babel + 'static, nodename: Option<String>) -> Self {
         // Setup Prometheus exporter
         let builder = metrics_exporter_prometheus::PrometheusBuilder::new();
-        let prometheus_handle = builder
-            .install_recorder()
-            .unwrap_or_else(|_| {
-                // In tests, recorder might already be installed
-                #[cfg(test)]
-                {
-                    metrics_exporter_prometheus::PrometheusBuilder::new()
-                        .build_recorder()
-                        .handle()
-                }
-                #[cfg(not(test))]
-                panic!("failed to install Prometheus recorder")
-            });
+        let prometheus_handle = builder.install_recorder().unwrap_or_else(|_| {
+            // In tests, recorder might already be installed
+            #[cfg(test)]
+            {
+                metrics_exporter_prometheus::PrometheusBuilder::new()
+                    .build_recorder()
+                    .handle()
+            }
+            #[cfg(not(test))]
+            panic!("failed to install Prometheus recorder")
+        });
 
         let metrics = if let Some(nodename) = nodename {
             BabelMetrics::new_with_labels(&[("nodename", nodename)])
@@ -56,11 +54,14 @@ impl BabelServer {
         let prometheus_handle = self.prometheus_handle.clone();
 
         Router::new()
-            .route("/status", get(status_handler))
             .route("/ready", get(ready_handler))
             .route("/healthy", get(healthy_handler))
             .route("/metrics", get(move || metrics_handler(prometheus_handle)))
             .with_state(self.state)
+    }
+
+    pub fn cached_status(&self) -> Arc<RwLock<Option<Status>>> {
+        self.state.cached_status.clone()
     }
 
     pub async fn serve(self, addr: &str) -> eyre::Result<()> {
@@ -101,18 +102,6 @@ impl BabelServer {
             }
         }
     }
-}
-
-async fn status_handler(State(state): State<AppState>) -> Result<Json<Status>, AppError> {
-    // Return cached status
-    let status = state
-        .cached_status
-        .read()
-        .await
-        .clone()
-        .ok_or_else(|| eyre::eyre!("Status not yet available"))?;
-
-    Ok(Json(status))
 }
 
 async fn ready_handler(State(state): State<AppState>) -> Result<StatusCode, AppError> {
@@ -228,41 +217,57 @@ mod tests {
         }
     }
 
-    async fn setup_server_with_status(status: Status) -> axum_test::TestServer {
+    struct TestContext {
+        rest_client: axum_test::TestServer,
+        rpc_url: String,
+        _rpc_handle: jsonrpsee::server::ServerHandle,
+    }
+
+    async fn setup_server_with_status(status: Status) -> TestContext {
         let mock_babel = MockBabel::new(status);
         let server = BabelServer::new(mock_babel, None);
 
-        // Start the status polling task
         let state = server.state.clone();
         tokio::spawn(async move {
             BabelServer::status_polling_loop(state).await;
         });
 
+        let cached_status = server.cached_status();
+        let rpc_addr = "127.0.0.1:0".parse().unwrap();
+        let (rpc_handle, rpc_local_addr) = crate::rpc::start_rpc_server(rpc_addr, cached_status)
+            .await
+            .unwrap();
+        let rpc_url = format!("http://{}", rpc_local_addr);
+
         let router = server.router();
-        let client = axum_test::TestServer::new(router).unwrap();
+        let rest_client = axum_test::TestServer::new(router).unwrap();
 
         // Wait for status polling to run at least once
         tokio::time::sleep(tokio::time::Duration::from_millis(1500)).await;
 
-        client
+        TestContext {
+            rest_client,
+            rpc_url,
+            _rpc_handle: rpc_handle,
+        }
     }
 
     #[tokio::test]
     async fn test_healthy_endpoint() {
         // Test healthy status
-        let client = setup_server_with_status(Status {
+        let ctx = setup_server_with_status(Status {
             is_healthy: true,
             ..Default::default()
         })
         .await;
 
-        let response = client.get("/healthy").await;
+        let response = ctx.rest_client.get("/healthy").await;
         assert_eq!(response.status_code(), axum::http::StatusCode::OK);
 
         // Test unhealthy status
-        let client = setup_server_with_status(Status::default()).await;
+        let ctx = setup_server_with_status(Status::default()).await;
 
-        let response = client.get("/healthy").await;
+        let response = ctx.rest_client.get("/healthy").await;
         assert_eq!(
             response.status_code(),
             axum::http::StatusCode::SERVICE_UNAVAILABLE
@@ -272,19 +277,19 @@ mod tests {
     #[tokio::test]
     async fn test_ready_endpoint() {
         // Test ready status
-        let client = setup_server_with_status(Status {
+        let ctx = setup_server_with_status(Status {
             is_ready: true,
             ..Default::default()
         })
         .await;
 
-        let response = client.get("/ready").await;
+        let response = ctx.rest_client.get("/ready").await;
         assert_eq!(response.status_code(), axum::http::StatusCode::OK);
 
         // Test not ready status
-        let client = setup_server_with_status(Status::default()).await;
+        let ctx = setup_server_with_status(Status::default()).await;
 
-        let response = client.get("/ready").await;
+        let response = ctx.rest_client.get("/ready").await;
         assert_eq!(
             response.status_code(),
             axum::http::StatusCode::SERVICE_UNAVAILABLE
@@ -292,8 +297,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_status_endpoint() {
-        let client = setup_server_with_status(Status {
+    async fn test_rpc_status() {
+        use babel_api::BabelApiClient;
+        use jsonrpsee::http_client::HttpClientBuilder;
+
+        let ctx = setup_server_with_status(Status {
             peers: 10,
             current_block_number: 500,
             is_syncing: true,
@@ -303,10 +311,9 @@ mod tests {
         })
         .await;
 
-        let response = client.get("/status").await;
-        assert_eq!(response.status_code(), axum::http::StatusCode::OK);
+        let client = HttpClientBuilder::default().build(&ctx.rpc_url).unwrap();
 
-        let status: Status = response.json();
+        let status = client.status().await.unwrap();
         assert_eq!(status.peers, 10);
         assert_eq!(status.current_block_number, 500);
         assert_eq!(status.is_syncing, true);
