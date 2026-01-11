@@ -34,15 +34,16 @@ impl BabelApiServer for BabelRpcServer {
 pub async fn start_rpc_server(
     addr: std::net::SocketAddr,
     cached_status: Arc<RwLock<Option<Status>>>,
-) -> eyre::Result<jsonrpsee::server::ServerHandle> {
+) -> eyre::Result<(jsonrpsee::server::ServerHandle, std::net::SocketAddr)> {
     use jsonrpsee::server::Server;
 
     let server = Server::builder().build(addr).await?;
+    let local_addr = server.local_addr()?;
 
     let rpc_server = BabelRpcServer::new(cached_status);
     let handle = server.start(rpc_server.into_rpc());
 
-    tracing::info!("Babel RPC server listening on {}", addr);
+    tracing::info!("Babel RPC server listening on {}", local_addr);
 
-    Ok(handle)
+    Ok((handle, local_addr))
 }

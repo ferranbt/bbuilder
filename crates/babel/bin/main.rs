@@ -83,7 +83,7 @@ async fn main() -> eyre::Result<()> {
 
     // Start RPC server in background
     let rpc_addr = cli.rpc_addr.parse()?;
-    let _rpc_handle = babel::rpc::start_rpc_server(rpc_addr, server.cached_status()).await?;
+    let (_rpc_handle, _rpc_local_addr) = babel::rpc::start_rpc_server(rpc_addr, server.cached_status()).await?;
 
     // Start REST server
     server.serve(&cli.addr).await?;
