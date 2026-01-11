@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use spec::{
-    Arg, Artifacts, Babel, ComputeResource, DEFAULT_JWT_TOKEN, Deployment, Manifest, Pod, Port,
-    Spec, Volume,
+    Arg, Artifacts, Babel, ComputeResource, DEFAULT_JWT_TOKEN, Deployment, DeploymentExtension,
+    Manifest, Pod, Port, Spec, Volume,
 };
 
 #[derive(Default, Clone)]
@@ -27,35 +27,17 @@ impl Deployment for EthereumDeployment {
     fn manifest(&self, chain: Chains, input: EthDeploymentInput) -> eyre::Result<Manifest> {
         let mut manifest = Manifest::new("eth".to_string());
 
-        let mut el_node = match input.el_node {
+        let el_node = match input.el_node {
             ELNode::Reth(reth) => reth.spec(chain.clone()),
         }?;
-
-        // Add Babel sidecar to EL pod
-        let babel_el = Babel::new(
-            "ethereum",
-            Arg::Ref {
-                name: "el-node".to_string(),
-                port: "http".to_string(),
-            },
-        );
-        el_node = el_node.with_spec("babel", babel_el.spec());
         manifest.add_spec("el".to_string(), el_node);
 
-        let mut cl_node = match input.cl_node {
+        let cl_node = match input.cl_node {
             CLNode::Lighthouse(lighthouse) => lighthouse.spec(chain.clone()),
             CLNode::Prysm(prysm) => prysm.spec(chain.clone()),
         }?;
 
         // Add Babel sidecar to CL pod
-        let babel_beacon = Babel::new(
-            "ethereum_beacon",
-            Arg::Ref {
-                name: "cl-node".to_string(),
-                port: "http".to_string(),
-            },
-        );
-        cl_node = cl_node.with_spec("babel", babel_beacon.spec());
         manifest.add_spec("cl".to_string(), cl_node);
 
         Ok(manifest)
@@ -115,6 +97,13 @@ impl ComputeResource for Reth {
                 port: 9090,
                 name: "metrics".to_string(),
             })
+            .with_babel(Babel::new(
+                "ethereum",
+                Arg::Ref {
+                    name: "el-node".to_string(),
+                    port: "http".to_string(),
+                },
+            ))
             .artifact(Artifacts::File(spec::File {
                 name: "jwt".to_string(),
                 target_path: "/data/jwt_secret".to_string(),
@@ -172,6 +161,13 @@ impl ComputeResource for Lighthouse {
             .arg2("--http-address", "0.0.0.0")
             .arg("--http")
             .arg2("--datadir", "/data")
+            .with_babel(Babel::new(
+                "ethereum_beacon",
+                Arg::Ref {
+                    name: "cl-node".to_string(),
+                    port: "http".to_string(),
+                },
+            ))
             .artifact(Artifacts::File(spec::File {
                 name: "jwt".to_string(),
                 target_path: "/data/jwt_secret".to_string(),
@@ -230,6 +226,13 @@ impl ComputeResource for Prysm {
                 },
             )
             .arg("--accept-terms-of-use")
+            .with_babel(Babel::new(
+                "ethereum_beacon",
+                Arg::Ref {
+                    name: "cl-node".to_string(),
+                    port: "http".to_string(),
+                },
+            ))
             .artifact(Artifacts::File(spec::File {
                 name: "jwt".to_string(),
                 target_path: "/data/jwt_secret".to_string(),

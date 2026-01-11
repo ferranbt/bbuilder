@@ -68,7 +68,18 @@ impl Manifest {
         }
     }
 
-    pub fn add_spec(&mut self, name: String, pod: Pod) {
+    pub fn add_spec(&mut self, name: String, mut pod: Pod) {
+        let mut new_specs = Vec::new();
+        for (spec_name, spec) in &pod.specs {
+            if let Some(babel) = spec.get_babel() {
+                let babel_spec = babel.spec();
+                let babel_name = format!("{}-babel", spec_name);
+                new_specs.push((babel_name, babel_spec));
+            }
+        }
+        for (babel_name, babel_spec) in new_specs {
+            pod.specs.insert(babel_name, babel_spec);
+        }
         self.pods.insert(name, pod);
     }
 
@@ -211,6 +222,7 @@ pub struct Spec {
     pub artifacts: Vec<Artifacts>,
     pub ports: Vec<Port>,
     pub volumes: Vec<Volume>,
+    pub extensions: HashMap<String, serde_json::Value>,
 }
 
 #[derive(Default)]
@@ -224,6 +236,7 @@ pub struct SpecBuilder {
     artifacts: Vec<Artifacts>,
     ports: Vec<Port>,
     volumes: Vec<Volume>,
+    extensions: HashMap<String, serde_json::Value>,
 }
 
 impl Spec {
@@ -305,6 +318,25 @@ impl SpecBuilder {
         self
     }
 
+    pub fn extension<K, V>(mut self, key: K, value: V) -> Self
+    where
+        K: Into<String>,
+        V: Into<serde_json::Value>,
+    {
+        self.extensions.insert(key.into(), value.into());
+        self
+    }
+
+    pub fn get_extension<R: serde::de::DeserializeOwned>(
+        &self,
+        name: String,
+    ) -> eyre::Result<Option<R>> {
+        match self.extensions.get(&name) {
+            Some(value) => Ok(Some(serde_json::from_value(value.clone())?)),
+            None => Ok(None),
+        }
+    }
+
     pub fn build(self) -> Spec {
         let mut ports = self.ports;
 
@@ -327,6 +359,7 @@ impl SpecBuilder {
             artifacts: self.artifacts,
             ports: ports,
             volumes: self.volumes,
+            extensions: self.extensions,
         }
     }
 }
@@ -337,7 +370,7 @@ impl Into<Spec> for SpecBuilder {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Babel {
     pub node_type: String,
     pub rpc_url: Arg,
@@ -363,6 +396,52 @@ impl Babel {
                 name: "metrics".to_string(),
             })
             .build()
+    }
+}
+
+pub trait DeploymentExtension {
+    fn min_version(self, version: String) -> Self;
+    fn with_babel(self, babel: Babel) -> Self;
+    fn get_babel(&self) -> Option<Babel>;
+}
+
+impl DeploymentExtension for SpecBuilder {
+    fn min_version(self, version: String) -> Self {
+        self.extension("min_version", serde_json::Value::String(version))
+    }
+
+    fn with_babel(self, babel: Babel) -> Self {
+        self.extension("babel", serde_json::to_value(babel).unwrap())
+    }
+
+    fn get_babel(&self) -> Option<Babel> {
+        self.get_extension("babel".to_string()).ok().flatten()
+    }
+}
+
+impl DeploymentExtension for Spec {
+    fn min_version(self, _version: String) -> Self {
+        self
+    }
+
+    fn with_babel(self, _babel: Babel) -> Self {
+        self
+    }
+
+    fn get_babel(&self) -> Option<Babel> {
+        self.get_extension("babel".to_string()).ok().flatten()
+    }
+}
+
+impl Spec {
+    pub fn get_extension<R: serde::de::DeserializeOwned>(
+        &self,
+        name: String,
+    ) -> eyre::Result<Option<R>> {
+        match self.extensions.get(&name) {
+            Some(value) => Ok(Some(serde_json::from_value(value.clone())?)),
+            None => Ok(None),
+        }
     }
 }
 

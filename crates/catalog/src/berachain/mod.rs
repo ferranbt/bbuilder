@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
-use spec::{Arg, Artifacts, Babel, ComputeResource, Deployment, Manifest, Pod, Spec, Volume};
+use spec::{
+    Arg, Artifacts, Babel, ComputeResource, Deployment, DeploymentExtension, Manifest, Pod, Spec,
+    Volume,
+};
 use template::Template;
 use tokio::task;
 
@@ -42,28 +45,10 @@ impl Deployment for BerachainDeployment {
     fn manifest(&self, chain: Chains, input: BerachainDeploymentInput) -> eyre::Result<Manifest> {
         let mut manifest = Manifest::new("berachain".to_string());
 
-        let mut beaconkit_pod = input.beacon_kit.spec(chain.clone())?;
-        // Add Babel sidecar to BeaconKit pod
-        let babel_cosmos = Babel::new(
-            "cosmos",
-            Arg::Ref {
-                name: "beaconkit-node".to_string(),
-                port: "http".to_string(),
-            },
-        );
-        beaconkit_pod = beaconkit_pod.with_spec("babel", babel_cosmos.spec());
+        let beaconkit_pod = input.beacon_kit.spec(chain.clone())?;
         manifest.add_spec("beaconkit".to_string(), beaconkit_pod);
 
-        let mut berareth_pod = input.bera_reth.spec(chain)?;
-        // Add Babel sidecar to BeraReth pod
-        let babel_ethereum = Babel::new(
-            "ethereum",
-            Arg::Ref {
-                name: "berareth-reth".to_string(),
-                port: "http".to_string(),
-            },
-        );
-        berareth_pod = berareth_pod.with_spec("babel", babel_ethereum.spec());
+        let berareth_pod = input.bera_reth.spec(chain)?;
         manifest.add_spec("berareth".to_string(), berareth_pod);
 
         Ok(manifest)
@@ -124,6 +109,13 @@ impl ComputeResource for BeaconKit {
             )
             .env("EL_BOOTNODES", bootnodes.trim())
             .env("EL_PEERS", peers.trim())
+            .with_babel(Babel::new(
+                "cosmos",
+                Arg::Ref {
+                    name: "beaconkit-node".to_string(),
+                    port: "http".to_string(),
+                },
+            ))
             .artifact(Artifacts::File(spec::File {
                 name: "genesis".to_string(),
                 target_path: "/data/genesis.json".to_string(),
@@ -175,6 +167,13 @@ impl ComputeResource for BeraReth {
             )
             .arg2("--http.addr", "0.0.0.0")
             .arg("--http")
+            .with_babel(Babel::new(
+                "ethereum",
+                Arg::Ref {
+                    name: "berareth-reth".to_string(),
+                    port: "http".to_string(),
+                },
+            ))
             .artifact(Artifacts::File(spec::File {
                 name: "eth-genesis".to_string(),
                 target_path: "/data/eth-genesis.json".to_string(),
