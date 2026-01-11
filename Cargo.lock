@@ -920,8 +920,10 @@ dependencies = [
  "async-trait",
  "axum",
  "axum-test",
+ "babel-api",
  "clap",
  "eyre",
+ "jsonrpsee",
  "metrics",
  "metrics-derive",
  "metrics-exporter-prometheus",
@@ -934,6 +936,18 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+]
+
+[[package]]
+name = "babel-api"
+version = "0.1.0"
+dependencies = [
+ "eyre",
+ "jsonrpsee",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

@@ -1,5 +1,5 @@
 use crate::{metrics::BabelMetrics, Babel, Status};
-use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::get, Json, Router};
+use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::get, Router};
 use metrics_exporter_prometheus::PrometheusHandle;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -56,11 +56,14 @@ impl BabelServer {
         let prometheus_handle = self.prometheus_handle.clone();
 
         Router::new()
-            .route("/status", get(status_handler))
             .route("/ready", get(ready_handler))
             .route("/healthy", get(healthy_handler))
             .route("/metrics", get(move || metrics_handler(prometheus_handle)))
             .with_state(self.state)
+    }
+
+    pub fn cached_status(&self) -> Arc<RwLock<Option<Status>>> {
+        self.state.cached_status.clone()
     }
 
     pub async fn serve(self, addr: &str) -> eyre::Result<()> {
@@ -101,18 +104,6 @@ impl BabelServer {
             }
         }
     }
-}
-
-async fn status_handler(State(state): State<AppState>) -> Result<Json<Status>, AppError> {
-    // Return cached status
-    let status = state
-        .cached_status
-        .read()
-        .await
-        .clone()
-        .ok_or_else(|| eyre::eyre!("Status not yet available"))?;
-
-    Ok(Json(status))
 }
 
 async fn ready_handler(State(state): State<AppState>) -> Result<StatusCode, AppError> {
@@ -291,27 +282,4 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn test_status_endpoint() {
-        let client = setup_server_with_status(Status {
-            peers: 10,
-            current_block_number: 500,
-            is_syncing: true,
-            latest_block_number: Some(1000),
-            is_healthy: true,
-            ..Default::default()
-        })
-        .await;
-
-        let response = client.get("/status").await;
-        assert_eq!(response.status_code(), axum::http::StatusCode::OK);
-
-        let status: Status = response.json();
-        assert_eq!(status.peers, 10);
-        assert_eq!(status.current_block_number, 500);
-        assert_eq!(status.is_syncing, true);
-        assert_eq!(status.latest_block_number, Some(1000));
-        assert_eq!(status.is_ready, false);
-        assert_eq!(status.is_healthy, true);
-    }
 }

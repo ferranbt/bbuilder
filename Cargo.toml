@@ -7,6 +7,7 @@ members = [
     "crates/catalog",
     "crates/template",
     "crates/babel",
+    "crates/babel-api",
     "crates/fetcher",
     "crates/fetcher-api",
     "crates/cosmos-keys"
@@ -18,6 +19,7 @@ runtime-docker-compose = { path = "crates/runtime-docker-compose" }
 runtime-trait = { path = "crates/runtime-trait" }
 catalog = { path = "crates/catalog" }
 template = { path = "crates/template" }
+babel-api = { path = "crates/babel-api" }
 fetcher-api = { path = "crates/fetcher-api" }
 cosmos-keys = { path = "crates/cosmos-keys" }
 

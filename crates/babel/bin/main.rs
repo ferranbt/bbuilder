@@ -13,9 +13,13 @@ struct Cli {
     #[arg(long)]
     rpc_url: String,
 
-    /// Server bind address
+    /// REST server bind address
     #[arg(long, default_value = "127.0.0.1:3000")]
     addr: String,
+
+    /// RPC server bind address
+    #[arg(long, default_value = "127.0.0.1:3001")]
+    rpc_addr: String,
 
     /// Node name for metrics labels (defaults to hostname/IP from rpc_url)
     #[arg(long)]
@@ -56,21 +60,18 @@ async fn main() -> eyre::Result<()> {
         nodename,
     );
 
-    match cli.node_type.as_str() {
+    let server = match cli.node_type.as_str() {
         "ethereum" => {
             let babel = EthereumBabel::new(cli.rpc_url).await?;
-            let server = BabelServer::new(babel, nodename);
-            server.serve(&cli.addr).await?;
+            BabelServer::new(babel, nodename)
         }
         "ethereum_beacon" => {
             let babel = EthereumBeaconBabel::new(cli.rpc_url);
-            let server = BabelServer::new(babel, nodename);
-            server.serve(&cli.addr).await?;
+            BabelServer::new(babel, nodename)
         }
         "cosmos" => {
             let babel = CosmosBabel::new(cli.rpc_url);
-            let server = BabelServer::new(babel, nodename);
-            server.serve(&cli.addr).await?;
+            BabelServer::new(babel, nodename)
         }
         _ => {
             return Err(eyre::eyre!(
@@ -78,7 +79,14 @@ async fn main() -> eyre::Result<()> {
                 cli.node_type
             ));
         }
-    }
+    };
+
+    // Start RPC server in background
+    let rpc_addr = cli.rpc_addr.parse()?;
+    let _rpc_handle = babel::rpc::start_rpc_server(rpc_addr, server.cached_status()).await?;
+
+    // Start REST server
+    server.serve(&cli.addr).await?;
 
     Ok(())
 }

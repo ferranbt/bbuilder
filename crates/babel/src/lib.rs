@@ -1,5 +1,7 @@
 use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
+
+// Re-export Status from babel-api
+pub use babel_api::Status;
 
 /// Core trait for blockchain node health checks
 #[async_trait]
@@ -8,21 +10,11 @@ pub trait Babel: Send + Sync {
     async fn status(&self) -> eyre::Result<Status>;
 }
 
-/// Status response
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct Status {
-    pub peers: u64,
-    pub current_block_number: u64,
-    pub is_syncing: bool,
-    pub latest_block_number: Option<u64>,
-    pub is_ready: bool,
-    pub is_healthy: bool,
-}
-
 pub mod cosmos;
 pub mod ethereum;
 pub mod ethereum_beacon;
 pub mod metrics;
+pub mod rpc;
 pub mod server;
 mod utils;
 
