@@ -22,7 +22,8 @@ struct Args {
     skip_if_valid_checksum: bool,
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
         .init();
@@ -61,7 +62,9 @@ fn main() {
         &args.destination,
         &mut progress,
         args.checksum,
-    ) {
+    )
+    .await
+    {
         tracing::error!("Failed to fetch: {}", e);
 
         // Print the error chain
