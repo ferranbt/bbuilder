@@ -1,4 +1,4 @@
-use jsonrpsee::proc_macros::rpc;
+use jsonrpsee::{core::SubscriptionResult, proc_macros::rpc};
 use serde::{Deserialize, Serialize};
 
 /// Progress message sent over WebSocket
@@ -18,5 +18,5 @@ pub enum ProgressMessage {
 pub trait FetcherProgressApi {
     /// Subscribe to download progress updates via WebSocket
     #[subscription(name = "subscribeProgress", item = ProgressMessage)]
-    async fn subscribe_progress(&self);
+    async fn subscribe_progress(&self) -> SubscriptionResult;
 }

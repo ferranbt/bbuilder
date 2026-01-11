@@ -1,7 +1,7 @@
+use fetcher_api::{FetcherProgressApiServer, ProgressMessage};
+use jsonrpsee::core::SubscriptionResult;
 use std::sync::Arc;
 use tokio::sync::broadcast;
-
-use fetcher_api::{FetcherProgressApiServer, ProgressMessage};
 
 use crate::ProgressTracker;
 
@@ -48,19 +48,26 @@ impl FetcherProgressServer {
 
 #[jsonrpsee::core::async_trait]
 impl FetcherProgressApiServer for FetcherProgressServer {
-    async fn subscribe_progress(&self, pending: jsonrpsee::PendingSubscriptionSink) {
+    async fn subscribe_progress(
+        &self,
+        pending: jsonrpsee::PendingSubscriptionSink,
+    ) -> SubscriptionResult {
         let sink = match pending.accept().await {
             Ok(sink) => sink,
-            Err(_) => return,
+            Err(err) => {
+                tracing::error!("failed to accept subscription: {err}");
+                return Err(err.to_string().into());
+            }
         };
 
         let mut rx = self.progress_tx.subscribe();
 
-        let _handle = tokio::spawn(async move {
+        tokio::spawn(async move {
             loop {
                 match rx.recv().await {
                     Ok(msg) => {
-                        let subscription_msg = jsonrpsee::SubscriptionMessage::from_json(&msg).unwrap();
+                        let subscription_msg =
+                            jsonrpsee::SubscriptionMessage::from_json(&msg).unwrap();
                         let result = sink.send(subscription_msg).await;
                         if result.is_err() {
                             break;
@@ -76,6 +83,8 @@ impl FetcherProgressApiServer for FetcherProgressServer {
             }
             tracing::debug!("Progress subscription ended");
         });
+
+        Ok(())
     }
 }
 
