@@ -1,0 +1,4 @@
+
+# Create content.tar.gz from content.txt and generate checksums
+fixtures:
+    ./scripts/generate-fixtures.sh
