@@ -8,7 +8,7 @@ members = [
     "crates/template",
     "crates/babel",
     "crates/fetcher",
-    "crates/fetcher-api"
+    "crates/fetcher-api",
     "crates/cosmos-keys"
 ]
 

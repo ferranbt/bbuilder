@@ -1,7 +1,8 @@
 use clap::Parser;
-use fetcher::{ConsoleProgressTracker, fetch_with_progress, verify_checksum};
+use fetcher::{ConsoleProgressTracker, fetch_with_progress, verify_checksum, MultiProgressTracker};
 use std::path::PathBuf;
 use std::process;
+use std::sync::Arc;
 
 #[derive(Parser, Debug)]
 #[command(name = "fetcher")]
@@ -20,6 +21,18 @@ struct Args {
     /// Skip download if file exists and checksum matches (requires --checksum)
     #[arg(long, requires = "checksum")]
     skip_if_valid_checksum: bool,
+
+    /// Enable WebSocket progress server
+    #[arg(long)]
+    ws: bool,
+
+    /// Port for WebSocket server (default: 7070)
+    #[arg(long, default_value = "7070")]
+    ws_port: u16,
+
+    /// Bind address for WebSocket server (default: 127.0.0.1)
+    #[arg(long, default_value = "0.0.0.0")]
+    ws_bind_address: String,
 }
 
 #[tokio::main]
@@ -55,7 +68,32 @@ async fn main() {
         }
     }
 
-    let mut progress = ConsoleProgressTracker::new();
+    // Build progress tracker with console, and optionally WebSocket
+    let mut progress = MultiProgressTracker::new().add_tracker(ConsoleProgressTracker::new());
+
+    // Start WebSocket server if enabled
+    let _ws_server_handle = if args.ws {
+        use fetcher::websocket::{start_progress_server, WebSocketProgressTracker};
+        use fetcher_api::ProgressMessage;
+        use tokio::sync::broadcast;
+
+        let addr = format!("{}:{}", args.ws_bind_address, args.ws_port)
+            .parse()
+            .expect("Invalid bind address");
+
+        let (tx, _rx) = broadcast::channel::<ProgressMessage>(100);
+        let tx = Arc::new(tx);
+
+        let handle = start_progress_server(addr, tx.clone())
+            .await
+            .expect("Failed to start WebSocket server");
+
+        progress = progress.add_tracker(WebSocketProgressTracker::new(tx));
+
+        Some(handle)
+    } else {
+        None
+    };
 
     if let Err(e) = fetch_with_progress(
         &args.source,

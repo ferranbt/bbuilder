@@ -971,11 +971,12 @@ dependencies = [
  "clap",
  "eyre",
  "runtime-docker-compose",
- "runtime-trait",
  "serde",
  "serde_json",
  "spec",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -1130,16 +1131,11 @@ name = "catalog"
 version = "0.1.0"
 dependencies = [
  "askama",
- "base64",
- "ed25519-dalek",
+ "cosmos-keys",
  "eyre",
- "hex",
- "k256",
- "rand 0.8.5",
  "reqwest",
  "serde",
  "serde_json",
- "sha3",
  "spec",
  "template",
  "tinytemplate",
@@ -1337,6 +1333,21 @@ name = "core-foundation-sys"
 version = "0.8.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
+
+[[package]]
+name = "cosmos-keys"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "ed25519-dalek",
+ "eyre",
+ "hex",
+ "k256",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "sha3",
+]
 
 [[package]]
 name = "cpufeatures"
@@ -1777,18 +1788,24 @@ dependencies = [
 name = "fetcher"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "clap",
  "eyre",
  "fetcher-api",
  "flate2",
+ "futures-util",
  "jsonrpsee",
+ "pin-project-lite",
  "reqwest",
+ "serde",
+ "serde_json",
  "sha2",
  "tar",
  "tokio",
  "tracing",
  "tracing-subscriber",
  "url",
+ "uuid",
 ]
 
 [[package]]
@@ -3672,12 +3689,14 @@ dependencies = [
  "tokio",
  "tokio-native-tls",
  "tokio-rustls",
+ "tokio-util",
  "tower 0.5.2",
  "tower-http",
  "tower-service",
  "url",
  "wasm-bindgen",
  "wasm-bindgen-futures",
+ "wasm-streams",
  "web-sys",
  "webpki-roots",
 ]
@@ -3774,21 +3793,12 @@ dependencies = [
  "eyre",
  "futures-util",
  "include_dir",
- "runtime-trait",
  "serde",
  "serde_yaml",
  "spec",
  "tinytemplate",
  "tokio",
-]
-
-[[package]]
-name = "runtime-trait"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "eyre",
- "spec",
+ "tracing",
 ]
 
 [[package]]
@@ -4986,6 +4996,7 @@ version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e2e054861b4bd027cd373e18e8d8d8e6548085000e41290d95ce0c373a654b4a"
 dependencies = [
+ "getrandom 0.3.4",
  "js-sys",
  "wasm-bindgen",
 ]
@@ -5107,6 +5118,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "76f218a38c84bcb33c25ec7059b07847d465ce0e0a76b995e134a45adcb6af76"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "wasm-streams"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "15053d8d85c7eccdbefef60f06769760a563c7f0a9d6902a13d35c7800b0ad65"
+dependencies = [
+ "futures-util",
+ "js-sys",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
 ]
 
 [[package]]

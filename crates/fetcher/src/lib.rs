@@ -97,6 +97,44 @@ impl ProgressTracker for ConsoleProgressTracker {
     }
 }
 
+/// A progress tracker that forwards updates to multiple trackers
+pub struct MultiProgressTracker {
+    trackers: Vec<Box<dyn ProgressTracker>>,
+}
+
+impl MultiProgressTracker {
+    pub fn new() -> Self {
+        Self {
+            trackers: Vec::new(),
+        }
+    }
+
+    pub fn add_tracker<T: ProgressTracker + 'static>(mut self, tracker: T) -> Self {
+        self.trackers.push(Box::new(tracker));
+        self
+    }
+}
+
+impl ProgressTracker for MultiProgressTracker {
+    fn set_total(&mut self, total: u64) {
+        for tracker in &mut self.trackers {
+            tracker.set_total(total);
+        }
+    }
+
+    fn update(&mut self, downloaded: u64) {
+        for tracker in &mut self.trackers {
+            tracker.update(downloaded);
+        }
+    }
+
+    fn finish(&mut self) {
+        for tracker in &mut self.trackers {
+            tracker.finish();
+        }
+    }
+}
+
 pub async fn fetch(source: &str, destination: &PathBuf, checksum: Option<String>) -> Result<()> {
     fetch_with_progress(source, destination, &mut NoOpProgressTracker, checksum).await
 }

@@ -51,19 +51,18 @@ impl FetcherProgressApiServer for FetcherProgressServer {
     async fn subscribe_progress(&self, pending: jsonrpsee::PendingSubscriptionSink) {
         let sink = match pending.accept().await {
             Ok(sink) => sink,
-            Err(e) => {
-                tracing::error!("Failed to accept subscription: {:?}", e);
-                return;
-            }
+            Err(_) => return,
         };
 
         let mut rx = self.progress_tx.subscribe();
 
-        tokio::spawn(async move {
+        let _handle = tokio::spawn(async move {
             loop {
                 match rx.recv().await {
                     Ok(msg) => {
-                        if sink.send(jsonrpsee::SubscriptionMessage::from_json(&msg).unwrap()).await.is_err() {
+                        let subscription_msg = jsonrpsee::SubscriptionMessage::from_json(&msg).unwrap();
+                        let result = sink.send(subscription_msg).await;
+                        if result.is_err() {
                             break;
                         }
                     }
@@ -75,6 +74,7 @@ impl FetcherProgressApiServer for FetcherProgressServer {
                     }
                 }
             }
+            tracing::debug!("Progress subscription ended");
         });
     }
 }
