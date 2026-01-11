@@ -241,34 +241,108 @@ fn extract_tar_gz<R: Read>(reader: R, destination: &Path) -> Result<()> {
 mod tests {
     use super::*;
     use std::fs;
+    use std::sync::{Arc, Mutex};
 
-    #[test]
-    fn test_download_readme() {
-        let source =
-            "https://raw.githubusercontent.com/ferranbt/bbuilder/refs/heads/main/README.md";
-        let destination = PathBuf::from("/tmp/fetcher_test_readme.md");
+    struct TestProgressTracker {
+        set_total_called: Arc<Mutex<bool>>,
+        update_called: Arc<Mutex<bool>>,
+        finish_called: Arc<Mutex<bool>>,
+    }
+
+    impl ProgressTracker for TestProgressTracker {
+        fn set_total(&mut self, _total: u64) {
+            *self.set_total_called.lock().unwrap() = true;
+        }
+
+        fn update(&mut self, _downloaded: u64) {
+            *self.update_called.lock().unwrap() = true;
+        }
+
+        fn finish(&mut self) {
+            *self.finish_called.lock().unwrap() = true;
+        }
+    }
+
+    fn test_download_file(filename: &str, checksum: &str) {
+        let source = format!(
+            "https://raw.githubusercontent.com/ferranbt/bbuilder/refs/heads/main/crates/fetcher/fixtures/{}",
+            filename
+        );
+        let destination = PathBuf::from(format!("/tmp/fetcher_test_{}", filename));
 
         // Clean up any existing file
         let _ = fs::remove_file(&destination);
 
-        // Download the file with checksum verification
-        // Expected SHA-256 checksum for the README.md file
-        let checksum = "79dcadb1ef725cbc30bb3a9a877cff3702e9d3bb28baff74265a9d70a2e8874b";
-        let result = fetch(source, &destination, Some(checksum.to_string()));
+        let set_total_called = Arc::new(Mutex::new(false));
+        let update_called = Arc::new(Mutex::new(false));
+        let finish_called = Arc::new(Mutex::new(false));
+
+        let mut progress = TestProgressTracker {
+            set_total_called: set_total_called.clone(),
+            update_called: update_called.clone(),
+            finish_called: finish_called.clone(),
+        };
+
+        // Download the file with checksum verification and progress tracking
+        let result = fetch_with_progress(
+            &source,
+            &destination,
+            &mut progress,
+            Some(checksum.to_string()),
+        );
         assert!(
             result.is_ok(),
-            "Failed to download file or verify checksum: {:?}",
+            "Failed to download {} or verify checksum: {:?}",
+            filename,
             result.err()
         );
 
         // Verify the file exists
-        assert!(destination.exists(), "Downloaded file does not exist");
+        assert!(
+            destination.exists(),
+            "Downloaded file {} does not exist",
+            filename
+        );
 
         // Verify the file has content
-        let content = fs::read_to_string(&destination).expect("Failed to read downloaded file");
-        assert!(!content.is_empty(), "Downloaded file is empty");
+        let metadata = fs::metadata(&destination)
+            .expect(&format!("Failed to read file metadata for {}", filename));
+        assert!(metadata.len() > 0, "Downloaded file {} is empty", filename);
+
+        // Verify progress tracker methods were called
+        assert!(
+            *set_total_called.lock().unwrap(),
+            "set_total was not called for {}",
+            filename
+        );
+        assert!(
+            *update_called.lock().unwrap(),
+            "update was not called for {}",
+            filename
+        );
+        assert!(
+            *finish_called.lock().unwrap(),
+            "finish was not called for {}",
+            filename
+        );
 
         // Clean up
         let _ = fs::remove_file(&destination);
+    }
+
+    #[test]
+    fn test_download_content_txt() {
+        test_download_file(
+            "content.txt",
+            "3dc7bc0209231cc61cb7d09c2efdfdf7aacb1f0b098db150780e980fa10d6b7a",
+        );
+    }
+
+    #[test]
+    fn test_download_content_tar_gz() {
+        test_download_file(
+            "content.tar.gz",
+            "aa7d1aae79175b06c5529409d65f4794479c9b060381e059a8b6d1510fa2ae48",
+        );
     }
 }

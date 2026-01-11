@@ -1776,6 +1776,8 @@ dependencies = [
  "eyre",
  "flate2",
  "reqwest",
+ "serde",
+ "serde_json",
  "sha2",
  "tar",
  "tracing",
