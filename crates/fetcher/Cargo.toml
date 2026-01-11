@@ -16,6 +16,9 @@ pin-project-lite = "0.2"
 bytes = "1.0"
 uuid = { version = "1.0", features = ["v4"] }
 eyre = { workspace = true }
+fetcher-api = { workspace = true }
+jsonrpsee = { workspace = true }
+
 url = "2.5"
 flate2 = "1.0"
 tar = "0.4"

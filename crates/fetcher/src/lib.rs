@@ -12,6 +12,8 @@ use tokio::io::{AsyncRead, ReadBuf};
 use url::Url;
 use uuid::Uuid;
 
+pub mod websocket;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum ArchiveFormat {
     TarGz,
@@ -92,6 +94,44 @@ impl ProgressTracker for ConsoleProgressTracker {
 
     fn finish(&mut self) {
         tracing::info!("Download complete!");
+    }
+}
+
+/// A progress tracker that forwards updates to multiple trackers
+pub struct MultiProgressTracker {
+    trackers: Vec<Box<dyn ProgressTracker>>,
+}
+
+impl MultiProgressTracker {
+    pub fn new() -> Self {
+        Self {
+            trackers: Vec::new(),
+        }
+    }
+
+    pub fn add_tracker<T: ProgressTracker + 'static>(mut self, tracker: T) -> Self {
+        self.trackers.push(Box::new(tracker));
+        self
+    }
+}
+
+impl ProgressTracker for MultiProgressTracker {
+    fn set_total(&mut self, total: u64) {
+        for tracker in &mut self.trackers {
+            tracker.set_total(total);
+        }
+    }
+
+    fn update(&mut self, downloaded: u64) {
+        for tracker in &mut self.trackers {
+            tracker.update(downloaded);
+        }
+    }
+
+    fn finish(&mut self) {
+        for tracker in &mut self.trackers {
+            tracker.finish();
+        }
     }
 }
 

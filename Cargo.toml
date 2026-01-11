@@ -8,6 +8,7 @@ members = [
     "crates/template",
     "crates/babel",
     "crates/fetcher",
+    "crates/fetcher-api",
     "crates/cosmos-keys"
 ]
 
@@ -17,6 +18,7 @@ runtime-docker-compose = { path = "crates/runtime-docker-compose" }
 runtime-trait = { path = "crates/runtime-trait" }
 catalog = { path = "crates/catalog" }
 template = { path = "crates/template" }
+fetcher-api = { path = "crates/fetcher-api" }
 cosmos-keys = { path = "crates/cosmos-keys" }
 
 serde = { version = "1.0", features = ["derive"] }
@@ -32,5 +34,6 @@ tinytemplate = "1.2"
 askama = "0.14.0"
 clap = { version = "4.5", features = ["derive"] }
 reqwest = { version = "0.12", default-features = false }
+jsonrpsee = { version = "0.24", features = ["server", "ws-client", "macros"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
