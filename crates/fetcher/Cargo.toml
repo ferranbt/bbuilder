@@ -9,7 +9,12 @@ path = "bin/main.rs"
 
 [dependencies]
 clap = { workspace = true, features = ["derive"] }
-reqwest = { workspace = true, features = ["blocking", "rustls-tls"] }
+reqwest = { workspace = true, features = ["rustls-tls", "stream"] }
+tokio = { workspace = true, features = ["io-util", "fs"] }
+futures-util = "0.3"
+pin-project-lite = "0.2"
+bytes = "1.0"
+uuid = { version = "1.0", features = ["v4"] }
 eyre = { workspace = true }
 fetcher-api = { workspace = true }
 tokio = { workspace = true }
@@ -21,3 +26,8 @@ tar = "0.4"
 sha2 = "0.10"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt", "macros"] }

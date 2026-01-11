@@ -54,6 +54,7 @@ pub struct ChainSpec<Chains: Default> {
     pub min_version: String,
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct Manifest {
     pub name: String,
     pub pods: HashMap<String, Pod>,
@@ -96,12 +97,12 @@ impl Manifest {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum Artifacts {
     File(File),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum Arg {
     Port { name: String, preferred: u16 },
     Dir { name: String, path: String },
@@ -181,7 +182,7 @@ impl From<&PathBuf> for Arg {
     }
 }
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, Deserialize, Serialize)]
 pub struct Pod {
     pub specs: HashMap<String, Spec>,
 }
@@ -193,13 +194,13 @@ impl Pod {
     }
 }
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, Deserialize, Serialize)]
 pub struct Port {
     pub port: u16,
     pub name: String,
 }
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, Deserialize, Serialize)]
 pub struct Spec {
     pub image: String,
     pub tag: Option<String>,

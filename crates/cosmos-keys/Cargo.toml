@@ -1,0 +1,15 @@
+[package]
+name = "cosmos-keys"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+eyre.workspace = true
+ed25519-dalek = { version = "2.2.0", features = ["rand_core"] }
+k256 = { version = "0.13", features = ["ecdsa"] }
+rand = "0.8"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha3 = "0.10"
+base64 = "0.22"
+hex = "0.4"
