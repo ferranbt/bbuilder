@@ -1,5 +1,6 @@
 use bollard::Docker;
 use bollard::query_parameters::{CreateImageOptions, EventsOptionsBuilder};
+use core::time;
 use futures_util::future::join_all;
 use futures_util::stream::StreamExt;
 use spec::{File, Manifest};
@@ -12,6 +13,7 @@ use crate::compose::Volume;
 use crate::compose::{
     DependsOn, DependsOnCondition, DockerComposeService, DockerComposeSpec, Port, ServiceVolume,
 };
+use crate::deployment_watcher::{DeploymentWatcher, DeploymentsWatcher};
 
 #[derive(Clone)]
 struct ReservedPorts {
@@ -85,44 +87,20 @@ fn load_reserved_ports(dir_path: &str, reserved_ports: &ReservedPorts) -> eyre::
 pub struct DockerRuntime {
     dir_path: String,
     reserved_ports: ReservedPorts,
+    deployments_watcher: Arc<Mutex<DeploymentsWatcher>>,
 }
 
 impl DockerRuntime {
     pub fn new(dir_path: String) -> Self {
-        tokio::spawn(async move {
-            let docker = Docker::connect_with_local_defaults().unwrap();
-
-            // Filter for container events only
-            let filters = HashMap::from([("label", vec!["bbuilder=true"])]);
-            let options = EventsOptionsBuilder::new().filters(&filters).build();
-
-            let mut events = docker.events(Some(options));
-            tracing::debug!("Listening for container events...");
-
-            while let Some(event_result) = events.next().await {
-                match event_result {
-                    Ok(event) => {
-                        tracing::debug!("Event: {:?}", event.action);
-                        if let Some(actor) = event.actor {
-                            tracing::debug!("  Container ID: {:?}", actor.id);
-                            if let Some(attrs) = actor.attributes {
-                                if let Some(name) = attrs.get("name") {
-                                    tracing::debug!("  Container Name: {}", name);
-                                }
-                            }
-                        }
-                    }
-                    Err(e) => tracing::error!("Error: {}", e),
-                }
-            }
-        });
-
         let reserved_ports = ReservedPorts::new();
         load_reserved_ports(&dir_path, &reserved_ports).unwrap();
+
+        let deployments_watcher = Arc::new(Mutex::new(DeploymentsWatcher::new()));
 
         Self {
             dir_path,
             reserved_ports,
+            deployments_watcher,
         }
     }
 
@@ -393,8 +371,18 @@ impl DockerRuntime {
 
         let docker_compose_spec = self.convert_to_docker_compose_spec(manifest)?;
 
-        // Pull images before running docker-compose
-        self.pull_images(&docker_compose_spec).await?;
+        /*
+        // Initialize deployment watcher
+        let watcher = Arc::new(Mutex::new(DeploymentWatcher::new(
+            &manifest,
+            &docker_compose_spec,
+        )));
+
+        // Register with the global deployments watcher
+        if let Ok(mut deployments) = self.deployments_watcher.lock() {
+            deployments.register(name.clone(), watcher);
+        }
+        */
 
         // Write the compose file in the parent folder
         let compose_file_path = parent_folder.join("docker-compose.yaml");
@@ -405,6 +393,9 @@ impl DockerRuntime {
 
         // Run docker-compose up in detached mode
         if !dry_run {
+            // Pull images before running docker-compose
+            self.pull_images(&docker_compose_spec).await?;
+
             Command::new("docker-compose")
                 .arg("-f")
                 .arg(&compose_file_path)
