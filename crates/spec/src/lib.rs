@@ -54,7 +54,7 @@ pub struct ChainSpec<Chains: Default> {
     pub min_version: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Manifest {
     pub name: String,
     pub pods: HashMap<String, Pod>,

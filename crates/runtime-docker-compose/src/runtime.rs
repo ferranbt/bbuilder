@@ -1,5 +1,5 @@
 use bollard::Docker;
-use bollard::query_parameters::{CreateImageOptions, EventsOptionsBuilder};
+use bollard::query_parameters::CreateImageOptions;
 use futures_util::future::join_all;
 use futures_util::stream::StreamExt;
 use spec::{File, Manifest};
@@ -7,11 +7,13 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::net::TcpListener;
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
+use tokio::sync::mpsc;
 
 use crate::compose::Volume;
 use crate::compose::{
     DependsOn, DependsOnCondition, DockerComposeService, DockerComposeSpec, Port, ServiceVolume,
 };
+use crate::deployment_watcher::{DeploymentState, DockerEventMessage, listen_docker_events};
 
 #[derive(Clone)]
 struct ReservedPorts {
@@ -85,44 +87,45 @@ fn load_reserved_ports(dir_path: &str, reserved_ports: &ReservedPorts) -> eyre::
 pub struct DockerRuntime {
     dir_path: String,
     reserved_ports: ReservedPorts,
+    deployments: Arc<Mutex<HashMap<String, Arc<Mutex<DeploymentState>>>>>,
 }
 
 impl DockerRuntime {
     pub fn new(dir_path: String) -> Self {
+        let reserved_ports = ReservedPorts::new();
+        load_reserved_ports(&dir_path, &reserved_ports).unwrap();
+
+        let deployments: Arc<Mutex<HashMap<String, Arc<Mutex<DeploymentState>>>>> =
+            Arc::new(Mutex::new(HashMap::new()));
+
+        let (event_tx, mut event_rx) = mpsc::unbounded_channel::<DockerEventMessage>();
+
+        let filters = HashMap::from([("label", vec!["bbuilder=true"])]);
+        tokio::spawn(listen_docker_events(event_tx, filters));
+
+        let deployments_clone = Arc::clone(&deployments);
         tokio::spawn(async move {
-            let docker = Docker::connect_with_local_defaults().unwrap();
-
-            // Filter for container events only
-            let filters = HashMap::from([("label", vec!["bbuilder=true"])]);
-            let options = EventsOptionsBuilder::new().filters(&filters).build();
-
-            let mut events = docker.events(Some(options));
-            tracing::debug!("Listening for container events...");
-
-            while let Some(event_result) = events.next().await {
-                match event_result {
-                    Ok(event) => {
-                        tracing::debug!("Event: {:?}", event.action);
-                        if let Some(actor) = event.actor {
-                            tracing::debug!("  Container ID: {:?}", actor.id);
-                            if let Some(attrs) = actor.attributes {
-                                if let Some(name) = attrs.get("name") {
-                                    tracing::debug!("  Container Name: {}", name);
-                                }
+            while let Some(event_msg) = event_rx.recv().await {
+                if let Ok(deps) = deployments_clone.lock() {
+                    for (manifest_name, state) in deps.iter() {
+                        if event_msg.container_name.starts_with(manifest_name) {
+                            if let Ok(mut w) = state.lock() {
+                                w.handle_container_event(
+                                    event_msg.container_name.clone(),
+                                    event_msg.event,
+                                );
                             }
+                            break;
                         }
                     }
-                    Err(e) => tracing::error!("Error: {}", e),
                 }
             }
         });
 
-        let reserved_ports = ReservedPorts::new();
-        load_reserved_ports(&dir_path, &reserved_ports).unwrap();
-
         Self {
             dir_path,
             reserved_ports,
+            deployments,
         }
     }
 
@@ -393,8 +396,13 @@ impl DockerRuntime {
 
         let docker_compose_spec = self.convert_to_docker_compose_spec(manifest)?;
 
-        // Pull images before running docker-compose
-        self.pull_images(&docker_compose_spec).await?;
+        // Initialize deployment state
+        let deployment_state = Arc::new(Mutex::new(DeploymentState::new(&docker_compose_spec)));
+
+        // Register deployment in the watcher
+        if let Ok(mut deployments) = self.deployments.lock() {
+            deployments.insert(name.clone(), deployment_state);
+        }
 
         // Write the compose file in the parent folder
         let compose_file_path = parent_folder.join("docker-compose.yaml");
@@ -405,6 +413,9 @@ impl DockerRuntime {
 
         // Run docker-compose up in detached mode
         if !dry_run {
+            // Pull images before running docker-compose
+            self.pull_images(&docker_compose_spec).await?;
+
             Command::new("docker-compose")
                 .arg("-f")
                 .arg(&compose_file_path)
