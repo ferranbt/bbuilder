@@ -1,6 +1,5 @@
 use bollard::Docker;
-use bollard::query_parameters::{CreateImageOptions, EventsOptionsBuilder};
-use core::time;
+use bollard::query_parameters::CreateImageOptions;
 use futures_util::future::join_all;
 use futures_util::stream::StreamExt;
 use spec::{File, Manifest};
@@ -8,12 +7,13 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::net::TcpListener;
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
+use tokio::sync::mpsc;
 
 use crate::compose::Volume;
 use crate::compose::{
     DependsOn, DependsOnCondition, DockerComposeService, DockerComposeSpec, Port, ServiceVolume,
 };
-use crate::deployment_watcher::{DeploymentWatcher, DeploymentsWatcher};
+use crate::deployment_watcher::{DeploymentState, DockerEventMessage, listen_docker_events};
 
 #[derive(Clone)]
 struct ReservedPorts {
@@ -87,7 +87,7 @@ fn load_reserved_ports(dir_path: &str, reserved_ports: &ReservedPorts) -> eyre::
 pub struct DockerRuntime {
     dir_path: String,
     reserved_ports: ReservedPorts,
-    deployments_watcher: Arc<Mutex<DeploymentsWatcher>>,
+    deployments: Arc<Mutex<HashMap<String, Arc<Mutex<DeploymentState>>>>>,
 }
 
 impl DockerRuntime {
@@ -95,12 +95,37 @@ impl DockerRuntime {
         let reserved_ports = ReservedPorts::new();
         load_reserved_ports(&dir_path, &reserved_ports).unwrap();
 
-        let deployments_watcher = Arc::new(Mutex::new(DeploymentsWatcher::new()));
+        let deployments: Arc<Mutex<HashMap<String, Arc<Mutex<DeploymentState>>>>> =
+            Arc::new(Mutex::new(HashMap::new()));
+
+        let (event_tx, mut event_rx) = mpsc::unbounded_channel::<DockerEventMessage>();
+
+        let filters = HashMap::from([("label", vec!["bbuilder=true"])]);
+        tokio::spawn(listen_docker_events(event_tx, filters));
+
+        let deployments_clone = Arc::clone(&deployments);
+        tokio::spawn(async move {
+            while let Some(event_msg) = event_rx.recv().await {
+                if let Ok(deps) = deployments_clone.lock() {
+                    for (manifest_name, state) in deps.iter() {
+                        if event_msg.container_name.starts_with(manifest_name) {
+                            if let Ok(mut w) = state.lock() {
+                                w.handle_container_event(
+                                    event_msg.container_name.clone(),
+                                    event_msg.event,
+                                );
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+        });
 
         Self {
             dir_path,
             reserved_ports,
-            deployments_watcher,
+            deployments,
         }
     }
 
@@ -371,18 +396,13 @@ impl DockerRuntime {
 
         let docker_compose_spec = self.convert_to_docker_compose_spec(manifest)?;
 
-        /*
-        // Initialize deployment watcher
-        let watcher = Arc::new(Mutex::new(DeploymentWatcher::new(
-            &manifest,
-            &docker_compose_spec,
-        )));
+        // Initialize deployment state
+        let deployment_state = Arc::new(Mutex::new(DeploymentState::new(&docker_compose_spec)));
 
-        // Register with the global deployments watcher
-        if let Ok(mut deployments) = self.deployments_watcher.lock() {
-            deployments.register(name.clone(), watcher);
+        // Register deployment in the watcher
+        if let Ok(mut deployments) = self.deployments.lock() {
+            deployments.insert(name.clone(), deployment_state);
         }
-        */
 
         // Write the compose file in the parent folder
         let compose_file_path = parent_folder.join("docker-compose.yaml");

@@ -37,7 +37,11 @@ async fn main() -> eyre::Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Run { filename, name, dry_run } => run_command(filename, name, cli.config_folder, dry_run).await?,
+        Commands::Run {
+            filename,
+            name,
+            dry_run,
+        } => run_command(filename, name, cli.config_folder, dry_run).await?,
     }
 
     Ok(())
