@@ -17,6 +17,8 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
+      - name: Pull test images # TODO: pull image in test itself
+        run: docker pull alpine:latest 
       - name: Run tests
         run: cargo test --lib
 
