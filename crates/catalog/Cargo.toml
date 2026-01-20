@@ -9,7 +9,6 @@ spec.workspace = true
 eyre.workspace = true
 tinytemplate.workspace = true
 serde_json.workspace = true
-tokio.workspace = true
 askama.workspace = true
 template.workspace = true
 cosmos-keys.workspace = true
