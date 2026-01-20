@@ -10,3 +10,4 @@ eyre.workspace = true
 catalog-berachain.workspace = true
 catalog-ethereum.workspace = true
 catalog-polygon.workspace = true
+catalog-tempo.workspace = true

@@ -1,0 +1,8 @@
+{
+    "name": "tempo-mainnet",
+    "chain": "tempo.mainnet",
+    "module": "tempo",
+    "args": {
+        "tempo": {}
+    }
+}

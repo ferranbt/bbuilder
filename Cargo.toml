@@ -13,7 +13,8 @@ members = [
     "crates/cosmos-keys",
     "catalog/berachain",
     "catalog/ethereum",
-    "catalog/polygon"
+    "catalog/polygon",
+    "catalog/tempo"
 ]
 
 [workspace.dependencies]
@@ -28,6 +29,7 @@ cosmos-keys = { path = "crates/cosmos-keys" }
 catalog-berachain = { path = "catalog/berachain" }
 catalog-ethereum = { path = "catalog/ethereum" }
 catalog-polygon = { path = "catalog/polygon" }
+catalog-tempo = { path = "catalog/tempo" }
 
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.9.34"

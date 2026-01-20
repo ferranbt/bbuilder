@@ -1,0 +1,13 @@
+[package]
+name = "catalog-tempo"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+serde.workspace = true
+spec.workspace = true
+eyre.workspace = true
+getrandom.workspace = true
+
+[lib]
+path = "lib.rs"
