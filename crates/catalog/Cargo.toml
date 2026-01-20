@@ -12,4 +12,4 @@ serde_json.workspace = true
 askama.workspace = true
 template.workspace = true
 cosmos-keys.workspace = true
-reqwest = { version = "0.12", features = ["blocking"] }
+getrandom.workspace = true

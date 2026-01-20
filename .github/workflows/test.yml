@@ -36,3 +36,15 @@ jobs:
         run: cargo run --package bbuilder run examples/input_polygon.json --dry-run
       - name: Test Ethereum example
         run: cargo run --package bbuilder run examples/input_ethereum.json --dry-run
+
+  test-wasm-build:
+    name: Test WASM build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+      - name: Build catalog for WASM
+        run: cargo build --target wasm32-unknown-unknown -p catalog
