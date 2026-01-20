@@ -36,13 +36,15 @@ jobs:
         run: cargo run --package bbuilder run examples/input_polygon.json --dry-run
       - name: Test Ethereum example
         run: cargo run --package bbuilder run examples/input_ethereum.json --dry-run
+      - name: Test Tempo example
+        run: cargo run --package bbuilder run examples/input_tempo.json --dry-run
 
   test-wasm-build:
     name: Test WASM build - ${{ matrix.catalog }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        catalog: [catalog-berachain, catalog-ethereum, catalog-polygon]
+        catalog: [catalog-berachain, catalog-ethereum, catalog-polygon, catalog-tempo]
     steps:
       - uses: actions/checkout@v4
       - uses: actions-rs/toolchain@v1
