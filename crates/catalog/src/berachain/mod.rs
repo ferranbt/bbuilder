@@ -4,13 +4,22 @@ use spec::{
     Volume,
 };
 use template::Template;
-use tokio::task;
 
 fn bera_chain_file(chain_id: u64, path: &str) -> String {
     format!(
         "https://raw.githubusercontent.com/berachain/beacon-kit/refs/heads/main/testing/networks/{}/{}",
         chain_id, path,
     )
+}
+
+fn get_network_file(chain_id: u64, filename: &str) -> &'static str {
+    match (chain_id, filename) {
+        (80069, "el-bootnodes.txt") => include_str!("config/networks/80069/el-bootnodes.txt"),
+        (80069, "el-peers.txt") => include_str!("config/networks/80069/el-peers.txt"),
+        (80094, "el-bootnodes.txt") => include_str!("config/networks/80094/el-bootnodes.txt"),
+        (80094, "el-peers.txt") => include_str!("config/networks/80094/el-peers.txt"),
+        _ => panic!("Unknown network file: {} for chain {}", filename, chain_id),
+    }
 }
 
 #[derive(Default, Clone)]
@@ -55,14 +64,6 @@ impl Deployment for BerachainDeployment {
     }
 }
 
-fn fetch_data(url: String) -> String {
-    let url = url.to_string();
-
-    let handle = task::spawn_blocking(move || reqwest::blocking::get(&url)?.text());
-
-    // Block on the handle from sync context
-    task::block_in_place(|| tokio::runtime::Handle::current().block_on(handle).unwrap()).unwrap()
-}
 
 #[derive(Template, Serialize)]
 #[template(path = "config/config.toml")]
@@ -88,8 +89,8 @@ impl ComputeResource for BeaconKit {
             rpc_dial_url: "http://localhost:8551".to_string(),
         };
 
-        let bootnodes = fetch_data(bera_chain_file(chain_id, "el-bootnodes.txt"));
-        let peers = fetch_data(bera_chain_file(chain_id, "el-peers.txt"));
+        let bootnodes = get_network_file(chain_id, "el-bootnodes.txt");
+        let peers = get_network_file(chain_id, "el-peers.txt");
 
         let node = Spec::builder()
             .image("ghcr.io/berachain/beacon-kit")
