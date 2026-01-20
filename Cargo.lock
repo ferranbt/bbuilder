@@ -1144,6 +1144,46 @@ dependencies = [
 name = "catalog"
 version = "0.1.0"
 dependencies = [
+ "catalog-berachain",
+ "catalog-ethereum",
+ "catalog-polygon",
+ "eyre",
+ "serde",
+ "spec",
+]
+
+[[package]]
+name = "catalog-berachain"
+version = "0.1.0"
+dependencies = [
+ "askama",
+ "eyre",
+ "getrandom 0.2.16",
+ "serde",
+ "serde_json",
+ "spec",
+ "template",
+ "tinytemplate",
+]
+
+[[package]]
+name = "catalog-ethereum"
+version = "0.1.0"
+dependencies = [
+ "askama",
+ "eyre",
+ "getrandom 0.2.16",
+ "serde",
+ "serde_json",
+ "spec",
+ "template",
+ "tinytemplate",
+]
+
+[[package]]
+name = "catalog-polygon"
+version = "0.1.0"
+dependencies = [
  "askama",
  "cosmos-keys",
  "eyre",

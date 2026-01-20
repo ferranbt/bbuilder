@@ -10,7 +10,10 @@ members = [
     "crates/babel-api",
     "crates/fetcher",
     "crates/fetcher-api",
-    "crates/cosmos-keys"
+    "crates/cosmos-keys",
+    "catalog/berachain",
+    "catalog/ethereum",
+    "catalog/polygon"
 ]
 
 [workspace.dependencies]
@@ -22,6 +25,9 @@ template = { path = "crates/template" }
 babel-api = { path = "crates/babel-api" }
 fetcher-api = { path = "crates/fetcher-api" }
 cosmos-keys = { path = "crates/cosmos-keys" }
+catalog-berachain = { path = "catalog/berachain" }
+catalog-ethereum = { path = "catalog/ethereum" }
+catalog-polygon = { path = "catalog/polygon" }
 
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.9.34"
@@ -33,7 +39,6 @@ async-trait = "0.1.89"
 serde_json = "1.0.145"
 include_dir = "0.7"
 tinytemplate = "1.2"
-askama = "0.14.0"
 clap = { version = "4.5", features = ["derive"] }
 reqwest = { version = "0.12", default-features = false }
 jsonrpsee = { version = "0.24", features = ["server", "ws-client", "http-client", "macros"] }

@@ -1,12 +1,8 @@
 use spec::{Dep, Deployment, Manifest};
 
-mod berachain;
-mod ethereum;
-mod polygon;
-
-pub use berachain::BerachainDeployment;
-pub use ethereum::EthereumDeployment;
-pub use polygon::PolygonDeployment;
+pub use catalog_berachain::BerachainDeployment;
+pub use catalog_ethereum::EthereumDeployment;
+pub use catalog_polygon::PolygonDeployment;
 
 pub fn apply(dep: Dep) -> eyre::Result<Manifest> {
     match dep.module.as_str() {

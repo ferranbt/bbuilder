@@ -38,13 +38,16 @@ jobs:
         run: cargo run --package bbuilder run examples/input_ethereum.json --dry-run
 
   test-wasm-build:
-    name: Test WASM build
+    name: Test WASM build - ${{ matrix.catalog }}
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        catalog: [catalog-berachain, catalog-ethereum, catalog-polygon]
     steps:
       - uses: actions/checkout@v4
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
           target: wasm32-unknown-unknown
-      - name: Build catalog for WASM
-        run: cargo build --target wasm32-unknown-unknown -p catalog
+      - name: Build ${{ matrix.catalog }} for WASM
+        run: cargo build --target wasm32-unknown-unknown -p ${{ matrix.catalog }}
