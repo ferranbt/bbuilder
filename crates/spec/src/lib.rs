@@ -222,6 +222,7 @@ pub struct Spec {
     pub artifacts: Vec<Artifacts>,
     pub ports: Vec<Port>,
     pub volumes: Vec<Volume>,
+    pub platform: Option<Platform>,
     pub extensions: HashMap<String, serde_json::Value>,
 }
 
@@ -237,12 +238,18 @@ pub struct SpecBuilder {
     ports: Vec<Port>,
     volumes: Vec<Volume>,
     extensions: HashMap<String, serde_json::Value>,
+    platform: Option<Platform>,
 }
 
 impl Spec {
     pub fn builder() -> SpecBuilder {
         SpecBuilder::default()
     }
+}
+
+#[derive(Debug, Copy, Clone, Deserialize, Serialize)]
+pub enum Platform {
+    LinuxAmd64,
 }
 
 impl SpecBuilder {
@@ -327,6 +334,11 @@ impl SpecBuilder {
         self
     }
 
+    pub fn platform(mut self, platform: Platform) -> Self {
+        self.platform = Some(platform);
+        self
+    }
+
     pub fn get_extension<R: serde::de::DeserializeOwned>(
         &self,
         name: String,
@@ -360,6 +372,7 @@ impl SpecBuilder {
             ports: ports,
             volumes: self.volumes,
             extensions: self.extensions,
+            platform: self.platform,
         }
     }
 }

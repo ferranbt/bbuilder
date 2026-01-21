@@ -1,5 +1,8 @@
 use serde::Deserialize;
-use spec::{Arg, Babel, ComputeResource, Deployment, DeploymentExtension, Manifest, Pod, Spec, Volume};
+use spec::{
+    Arg, Babel, ComputeResource, Deployment, DeploymentExtension, Manifest, Platform, Pod, Spec,
+    Volume,
+};
 
 #[derive(Default, Clone)]
 pub enum Chains {
@@ -37,7 +40,7 @@ impl ComputeResource for Tempo {
 
     fn spec(&self, _chain: Chains) -> eyre::Result<Pod> {
         let node = Spec::builder()
-            .image("ghcr.io/tempo-xyz/tempo")
+            .image("ghcr.io/tempoxyz/tempo")
             .tag("1.0.1")
             .volume(Volume {
                 name: "data".to_string(),
@@ -77,6 +80,7 @@ impl ComputeResource for Tempo {
                     preferred: 9000,
                 },
             )
+            .platform(Platform::LinuxAmd64)
             .with_babel(Babel::new(
                 "ethereum",
                 Arg::Ref {
