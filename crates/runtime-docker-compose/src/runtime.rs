@@ -2,7 +2,7 @@ use bollard::Docker;
 use bollard::query_parameters::CreateImageOptions;
 use futures_util::future::join_all;
 use futures_util::stream::StreamExt;
-use spec::{File, Manifest};
+use spec::{File, Manifest, Platform};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::net::TcpListener;
 use std::process::{Command, Stdio};
@@ -360,6 +360,15 @@ impl DockerRuntime {
                     labels.insert("metrics".to_string(), format!("{}", metrics_port.port));
                 }
 
+                let platform = if let Some(platform) = spec.platform {
+                    let str = match platform {
+                        Platform::LinuxAmd64 => "linux/amd64".to_string(),
+                    };
+                    Some(str)
+                } else {
+                    None
+                };
+
                 let service = DockerComposeService {
                     command,
                     entrypoint: spec.entrypoint.clone(),
@@ -370,6 +379,7 @@ impl DockerRuntime {
                     volumes: service_volumes,
                     networks: vec!["test".to_string()],
                     depends_on: init_services,
+                    platform,
                 };
 
                 let service_name = format!("{}-{}", pod_name, spec_name);

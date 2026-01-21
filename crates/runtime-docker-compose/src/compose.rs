@@ -49,6 +49,10 @@ pub(crate) struct DockerComposeService {
     #[serde(default)]
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub depends_on: BTreeMap<String, DependsOn>,
+
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub platform: Option<String>,
 }
 
 #[derive(Default, Debug)]
