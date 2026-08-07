@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use spec::{
-    Arg, Artifacts, Babel, ComputeResource, DEFAULT_JWT_TOKEN, Deployment, DeploymentExtension,
-    Manifest, Pod, Port, Spec, Volume,
+    Arg, Artifacts, Babel, ComputeResource, Deployment, DeploymentExtension, Manifest, Pod, Port,
+    Spec, Volume,
 };
 
 #[derive(Default, Clone)]
@@ -104,11 +104,7 @@ impl ComputeResource for Reth {
                     port: "http".to_string(),
                 },
             ))
-            .artifact(Artifacts::File(spec::File {
-                name: "jwt".to_string(),
-                target_path: "/data/jwt_secret".to_string(),
-                content: DEFAULT_JWT_TOKEN.to_string(),
-            }));
+            .artifact(Artifacts::File(spec::File::jwt("jwt", "/data/jwt_secret")));
 
         Ok(Pod::default().with_spec("node", node))
     }
@@ -168,11 +164,7 @@ impl ComputeResource for Lighthouse {
                     port: "http".to_string(),
                 },
             ))
-            .artifact(Artifacts::File(spec::File {
-                name: "jwt".to_string(),
-                target_path: "/data/jwt_secret".to_string(),
-                content: DEFAULT_JWT_TOKEN.to_string(),
-            }));
+            .artifact(Artifacts::File(spec::File::jwt("jwt", "/data/jwt_secret")));
 
         Ok(Pod::default().with_spec("node", node))
     }
@@ -233,11 +225,7 @@ impl ComputeResource for Prysm {
                     port: "http".to_string(),
                 },
             ))
-            .artifact(Artifacts::File(spec::File {
-                name: "jwt".to_string(),
-                target_path: "/data/jwt_secret".to_string(),
-                content: DEFAULT_JWT_TOKEN.to_string(),
-            }));
+            .artifact(Artifacts::File(spec::File::jwt("jwt", "/data/jwt_secret")));
 
         Ok(Pod::default().with_spec("node", node))
     }

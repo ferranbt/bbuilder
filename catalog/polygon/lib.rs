@@ -1,8 +1,7 @@
-use cosmos_keys::{generate_cometbft_key, generate_tendermint_key};
 use serde::{Deserialize, Serialize};
 use spec::{
-    Arg, Artifacts, Babel, ComputeResource, Deployment, DeploymentExtension, Manifest, Pod, Spec,
-    Volume,
+    Arg, Artifacts, Babel, ComputeResource, Deployment, DeploymentExtension, Generated, Manifest,
+    Pod, Spec, Volume,
 };
 use template::Template;
 
@@ -48,9 +47,6 @@ impl ComputeResource for Heimdall {
             chain: chain.cosmos_chain_id().to_string(),
         };
 
-        let keys = generate_tendermint_key().serialize()?;
-        let val_keys = generate_cometbft_key().serialize()?;
-
         let val_keys_state = "{
   \"height\": \"0\",
   \"round\": 0,
@@ -81,41 +77,41 @@ impl ComputeResource for Heimdall {
                     port: "http".to_string(),
                 },
             ))
-            .artifact(Artifacts::File(spec::File{
-                name: "genesis".to_string(),
-                target_path: "/data/heimdall/config/genesis.json".to_string(),
-                content: "https://storage.googleapis.com/amoy-heimdallv2-genesis/migrated_dump-genesis.json".to_string(),
-            }))
-            .artifact(Artifacts::File(spec::File{
-                name: "client.toml".to_string(),
-                target_path: "/data/heimdall/config/client.toml".to_string(),
-                content: client_config.render().to_string(),
-            }))
-            .artifact(Artifacts::File(spec::File{
-                name: "app.toml".to_string(),
-                target_path: "/data/heimdall/config/app.toml".to_string(),
-                content: app_config.to_string(),
-            }))
-            .artifact(Artifacts::File(spec::File{
-                name: "config.toml".to_string(),
-                target_path: "/data/heimdall/config/config.toml".to_string(),
-                content: config_config.to_string(),
-            }))
-            .artifact(Artifacts::File(spec::File{
-                name: "node_key.json".to_string(),
-                target_path: "/data/heimdall/config/node_key.json".to_string(),
-                content: keys,
-            }))
-            .artifact(Artifacts::File(spec::File{
-                name: "priv_validator_key.json".to_string(),
-                target_path: "/data/heimdall/config/priv_validator_key.json".to_string(),
-                content: val_keys,
-            }))
-            .artifact(Artifacts::File(spec::File{
-                name: "priv_validator_state.json".to_string(),
-                target_path: "/data/heimdall/data/priv_validator_state.json".to_string(),
-                content: val_keys_state.to_string(),
-            }));
+            .artifact(Artifacts::File(spec::File::remote(
+                "genesis",
+                "/data/heimdall/config/genesis.json",
+                "https://storage.googleapis.com/amoy-heimdallv2-genesis/migrated_dump-genesis.json",
+            )))
+            .artifact(Artifacts::File(spec::File::inline(
+                "client.toml",
+                "/data/heimdall/config/client.toml",
+                client_config.render(),
+            )))
+            .artifact(Artifacts::File(spec::File::inline(
+                "app.toml",
+                "/data/heimdall/config/app.toml",
+                app_config,
+            )))
+            .artifact(Artifacts::File(spec::File::inline(
+                "config.toml",
+                "/data/heimdall/config/config.toml",
+                config_config,
+            )))
+            .artifact(Artifacts::File(spec::File::generated(
+                "node_key.json",
+                "/data/heimdall/config/node_key.json",
+                Generated::Ed25519TendermintNodeKey,
+            )))
+            .artifact(Artifacts::File(spec::File::generated(
+                "priv_validator_key.json",
+                "/data/heimdall/config/priv_validator_key.json",
+                Generated::Secp256k1CometBftValidatorKey,
+            )))
+            .artifact(Artifacts::File(spec::File::inline(
+                "priv_validator_state.json",
+                "/data/heimdall/data/priv_validator_state.json",
+                val_keys_state,
+            )));
 
         Ok(Pod::default().with_spec("node", node))
     }
@@ -161,16 +157,16 @@ impl ComputeResource for Bor {
             })
             .arg("server")
             .arg2("--config", "/data/config.toml")
-            .artifact(Artifacts::File(spec::File {
-                name: "config".to_string(),
-                target_path: "/data/config.toml".to_string(),
-                content: config.render(),
-            }))
-            .artifact(Artifacts::File(spec::File {
-                name: "genesis.json".to_string(),
-                target_path: "/data/genesis.json".to_string(),
-                content: bor_genesis(chain),
-            }));
+            .artifact(Artifacts::File(spec::File::inline(
+                "config",
+                "/data/config.toml",
+                config.render(),
+            )))
+            .artifact(Artifacts::File(spec::File::remote(
+                "genesis.json",
+                "/data/genesis.json",
+                bor_genesis(chain),
+            )));
 
         Ok(Pod::default().with_spec("bor", node))
     }

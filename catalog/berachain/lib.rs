@@ -117,26 +117,26 @@ impl ComputeResource for BeaconKit {
                     port: "http".to_string(),
                 },
             ))
-            .artifact(Artifacts::File(spec::File {
-                name: "genesis".to_string(),
-                target_path: "/data/genesis.json".to_string(),
-                content: bera_chain_file(chain_id, "genesis.json"),
-            }))
-            .artifact(Artifacts::File(spec::File {
-                name: "kzg-trusted-setup".to_string(),
-                target_path: "/data/kzg-trusted-setup.json".to_string(),
-                content: bera_chain_file(chain_id, "kzg-trusted-setup.json"),
-            }))
-            .artifact(Artifacts::File(spec::File {
-                name: "config".to_string(),
-                target_path: "/data/config.toml".to_string(),
-                content: config_file.render().to_string(),
-            }))
-            .artifact(Artifacts::File(spec::File {
-                name: "app".to_string(),
-                target_path: "/data/app.toml".to_string(),
-                content: app_file.render().to_string(),
-            }));
+            .artifact(Artifacts::File(spec::File::remote(
+                "genesis",
+                "/data/genesis.json",
+                bera_chain_file(chain_id, "genesis.json"),
+            )))
+            .artifact(Artifacts::File(spec::File::remote(
+                "kzg-trusted-setup",
+                "/data/kzg-trusted-setup.json",
+                bera_chain_file(chain_id, "kzg-trusted-setup.json"),
+            )))
+            .artifact(Artifacts::File(spec::File::inline(
+                "config",
+                "/data/config.toml",
+                config_file.render(),
+            )))
+            .artifact(Artifacts::File(spec::File::inline(
+                "app",
+                "/data/app.toml",
+                app_file.render(),
+            )));
 
         Ok(Pod::default().with_spec("node", node))
     }
@@ -175,11 +175,11 @@ impl ComputeResource for BeraReth {
                     port: "http".to_string(),
                 },
             ))
-            .artifact(Artifacts::File(spec::File {
-                name: "eth-genesis".to_string(),
-                target_path: "/data/eth-genesis.json".to_string(),
-                content: bera_chain_file(chain_id, "eth-genesis.json"),
-            }));
+            .artifact(Artifacts::File(spec::File::remote(
+                "eth-genesis",
+                "/data/eth-genesis.json",
+                bera_chain_file(chain_id, "eth-genesis.json"),
+            )));
 
         Ok(Pod::default().with_spec("reth", node))
     }
