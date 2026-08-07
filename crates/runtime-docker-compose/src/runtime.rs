@@ -2,7 +2,7 @@ use bollard::Docker;
 use bollard::query_parameters::CreateImageOptions;
 use futures_util::future::join_all;
 use futures_util::stream::StreamExt;
-use spec::{File, Manifest, Platform};
+use spec::{File, Manifest, Platform, ResolvedSource};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::net::TcpListener;
 use std::process::{Command, Stdio};
@@ -82,6 +82,34 @@ fn load_reserved_ports(dir_path: &str, reserved_ports: &ReservedPorts) -> eyre::
     }
 
     Ok(())
+}
+
+fn fetch_service(
+    url: String,
+    checksum: Option<String>,
+    target_path: &str,
+    pod_name: &str,
+    volumes: &[spec::Volume],
+) -> eyre::Result<DockerComposeService> {
+    let matching_vol = volumes
+        .iter()
+        .find(|vol| target_path.starts_with(&vol.path))
+        .ok_or_else(|| eyre::eyre!("No matching volume found for path: {}", target_path))?;
+
+    let mut command = vec![url, target_path.to_string()];
+    if let Some(checksum) = checksum {
+        command.push(checksum);
+    }
+
+    Ok(DockerComposeService {
+        image: "ghcr.io/ferranbt/bbuilder/fetcher:latest".to_string(),
+        command,
+        volumes: vec![ServiceVolume {
+            host: format!("{}-{}", pod_name, matching_vol.name),
+            target: matching_vol.path.clone(),
+        }],
+        ..Default::default()
+    })
 }
 
 pub struct DockerRuntime {
@@ -210,7 +238,7 @@ impl DockerRuntime {
 
     fn convert_to_docker_compose_spec(
         &self,
-        manifest: Manifest,
+        manifest: Manifest<ResolvedSource>,
     ) -> eyre::Result<DockerComposeSpec> {
         let mut services = HashMap::new();
         let mut volumes = HashMap::new();
@@ -267,10 +295,6 @@ impl DockerRuntime {
                         spec::Arg::Value(value) => Some(value.clone()),
                         spec::Arg::Dir { path, .. } => Some(path.clone()),
                         spec::Arg::Port { preferred, .. } => Some(format!("{}", preferred)),
-                        spec::Arg::File(file) => {
-                            artifacts_to_process.push(spec::Artifacts::File(file.clone()));
-                            None
-                        }
                         spec::Arg::Ref { name, port } => {
                             let reference = manifest.resolve_ref(name.clone(), port.clone())?;
                             Some(reference)
@@ -290,65 +314,39 @@ impl DockerRuntime {
 
                 // Process all artifacts after args have been hydrated
                 for artifact in artifacts_to_process {
-                    match artifact {
-                        spec::Artifacts::File(File {
-                            name,
-                            target_path,
-                            content,
-                        }) => {
-                            // Check if the file is a URL
-                            if content.starts_with("https://") {
-                                // For URLs, create an init container to download the file
-                                let init_service_name =
-                                    format!("{}-{}-init-{}", pod_name, spec_name, name);
+                    let spec::Artifacts::File(File {
+                        name,
+                        target_path,
+                        source,
+                    }) = artifact;
 
-                                // Figure out which volume is this artifact refering to
-                                let matching_vol = spec
-                                    .volumes
-                                    .iter()
-                                    .find(|vol| target_path.starts_with(&vol.path))
-                                    .ok_or_else(|| {
-                                        eyre::eyre!(
-                                            "No matching volume found for path: {}",
-                                            target_path
-                                        )
-                                    })?;
+                    match source {
+                        spec::ResolvedSource::Remote { url, checksum } => {
+                            let init_service_name =
+                                format!("{}-{}-init-{}", pod_name, spec_name, name);
 
-                                let matching_vol_name =
-                                    format!("{}-{}", pod_name, matching_vol.name.clone());
+                            let init_service =
+                                fetch_service(url, checksum, &target_path, pod_name, &spec.volumes)?;
 
-                                // Create init container service
-                                let init_service = DockerComposeService {
-                                    image: "ghcr.io/ferranbt/bbuilder/fetcher:latest".to_string(),
-                                    command: vec![content, target_path],
-                                    volumes: vec![ServiceVolume {
-                                        host: matching_vol_name.clone(),
-                                        target: matching_vol.path.clone(),
-                                    }],
-                                    ..Default::default()
-                                };
-
-                                services.insert(init_service_name.clone(), init_service);
-                                init_services.insert(
-                                    init_service_name,
-                                    DependsOn {
-                                        condition: Some(
-                                            DependsOnCondition::ServiceCompletedSuccessfully,
-                                        ),
-                                    },
-                                );
-                            } else {
-                                let target_host_path = absolute_config_path.join(name);
-                                if let Some(parent) = target_host_path.parent() {
-                                    std::fs::create_dir_all(parent)?;
-                                }
-                                std::fs::write(&target_host_path, content)?;
-
-                                service_volumes.push(ServiceVolume {
-                                    host: target_host_path.display().to_string(),
-                                    target: target_path,
-                                });
+                            services.insert(init_service_name.clone(), init_service);
+                            init_services.insert(
+                                init_service_name,
+                                DependsOn {
+                                    condition: Some(DependsOnCondition::ServiceCompletedSuccessfully),
+                                },
+                            );
+                        }
+                        spec::ResolvedSource::Inline(content) => {
+                            let target_host_path = absolute_config_path.join(name);
+                            if let Some(parent) = target_host_path.parent() {
+                                std::fs::create_dir_all(parent)?;
                             }
+                            std::fs::write(&target_host_path, content)?;
+
+                            service_volumes.push(ServiceVolume {
+                                host: target_host_path.display().to_string(),
+                                target: target_path,
+                            });
                         }
                     }
                 }
@@ -397,7 +395,7 @@ impl DockerRuntime {
         })
     }
 
-    pub async fn run(&self, manifest: Manifest, dry_run: bool) -> eyre::Result<()> {
+    pub async fn run(&self, manifest: Manifest<ResolvedSource>, dry_run: bool) -> eyre::Result<()> {
         let name = manifest.name.clone();
 
         // Create the parent folder path
@@ -445,8 +443,17 @@ mod tests {
     use super::*;
     use spec::{Artifacts, File, Manifest, Pod, Spec};
 
-    fn generate_docker_compose(manifest: Manifest) -> eyre::Result<DockerComposeSpec> {
-        let temp_dir = std::env::temp_dir().join("test-runtime");
+    fn generate_docker_compose(
+        manifest: Manifest<ResolvedSource>,
+    ) -> eyre::Result<DockerComposeSpec> {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+        let temp_dir = std::env::temp_dir().join(format!(
+            "test-runtime-{}-{}",
+            std::process::id(),
+            COUNTER.fetch_add(1, Ordering::Relaxed)
+        ));
         let _ = std::fs::remove_dir_all(&temp_dir);
         std::fs::create_dir_all(&temp_dir).unwrap();
         let runtime = DockerRuntime::new(temp_dir.to_str().unwrap().to_string());
@@ -464,7 +471,7 @@ mod tests {
         let file_artifact = File {
             name: "config.json".to_string(),
             target_path: "/app/config.json".to_string(),
-            content: r#"{"key": "value"}"#.to_string(),
+            source: ResolvedSource::Inline(r#"{"key": "value"}"#.to_string()),
         };
 
         let spec = Spec::builder()
@@ -473,7 +480,7 @@ mod tests {
             .build();
 
         let pod = Pod::default().with_spec("test-service", spec);
-        manifest.add_spec("test-pod".to_string(), pod);
+        manifest.pods.insert("test-pod".to_string(), pod);
 
         let docker_compose = generate_docker_compose(manifest)?;
         let service = docker_compose
@@ -495,10 +502,60 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_remote_source_creates_fetcher_init_service() -> eyre::Result<()> {
+        let mut manifest = Manifest::new("remote-test".to_string());
+
+        let spec: Spec<ResolvedSource> = Spec::builder()
+            .image("test-image")
+            .volume(spec::Volume {
+                name: "data".to_string(),
+                path: "/data".to_string(),
+            })
+            .artifact(Artifacts::File(File {
+                name: "genesis".to_string(),
+                target_path: "/data/genesis.json".to_string(),
+                source: ResolvedSource::Remote {
+                    url: "https://example.com/genesis.json".to_string(),
+                    checksum: None,
+                },
+            }))
+            .build();
+
+        manifest
+            .pods
+            .insert("pod".to_string(), Pod::default().with_spec("node", spec));
+
+        let docker_compose = generate_docker_compose(manifest)?;
+
+        let init = docker_compose
+            .services
+            .get("pod-node-init-genesis")
+            .expect("fetcher init service should exist");
+        assert_eq!(
+            init.command,
+            ["https://example.com/genesis.json", "/data/genesis.json"]
+        );
+        assert!(
+            init.volumes
+                .iter()
+                .any(|v| v.host == "pod-data" && v.target == "/data"),
+            "init service should mount the volume the artifact targets"
+        );
+
+        let service = docker_compose.services.get("pod-node").unwrap();
+        assert!(
+            service.depends_on.contains_key("pod-node-init-genesis"),
+            "service should wait for the fetch to complete"
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn test_port_arg_uses_preferred_port() -> eyre::Result<()> {
         let mut manifest = Manifest::new("port-test".to_string());
 
-        let spec = Spec::builder()
+        let spec: Spec<ResolvedSource> = Spec::builder()
             .image("test-image")
             .arg(spec::Arg::Port {
                 name: "rpc-port".to_string(),
@@ -507,7 +564,7 @@ mod tests {
             .build();
 
         let pod = Pod::default().with_spec("service", spec);
-        manifest.add_spec("pod".to_string(), pod);
+        manifest.pods.insert("pod".to_string(), pod);
 
         let docker_compose = generate_docker_compose(manifest)?;
         let service = docker_compose.services.get("pod-service").unwrap();
@@ -567,7 +624,7 @@ mod tests {
     async fn test_volumes_are_created_with_bbuilder_label() -> eyre::Result<()> {
         let mut manifest = Manifest::new("volume-test".to_string());
 
-        let spec = Spec::builder()
+        let spec: Spec<ResolvedSource> = Spec::builder()
             .image("test-image")
             .volume(spec::Volume {
                 name: "data".to_string(),
@@ -576,7 +633,7 @@ mod tests {
             .build();
 
         let pod = Pod::default().with_spec("service", spec);
-        manifest.add_spec("pod".to_string(), pod);
+        manifest.pods.insert("pod".to_string(), pod);
 
         let docker_compose = generate_docker_compose(manifest)?;
 
@@ -614,9 +671,9 @@ mod tests {
     #[tokio::test]
     async fn test_image_tag_defaults_to_latest() -> eyre::Result<()> {
         let mut manifest = Manifest::new("tag-test".to_string());
-        let spec = Spec::builder().image("test-image").build();
+        let spec: Spec<ResolvedSource> = Spec::builder().image("test-image").build();
         let pod = Pod::default().with_spec("service", spec);
-        manifest.add_spec("pod".to_string(), pod);
+        manifest.pods.insert("pod".to_string(), pod);
 
         let docker_compose = generate_docker_compose(manifest)?;
         let service = docker_compose.services.get("pod-service").unwrap();
@@ -628,13 +685,13 @@ mod tests {
     #[tokio::test]
     async fn test_service_includes_spec_labels_and_bbuilder_label() -> eyre::Result<()> {
         let mut manifest = Manifest::new("label-test".to_string());
-        let spec = Spec::builder()
+        let spec: Spec<ResolvedSource> = Spec::builder()
             .image("test-image")
             .label("app", "myapp")
             .label("env", "production")
             .build();
         let pod = Pod::default().with_spec("service", spec);
-        manifest.add_spec("pod".to_string(), pod);
+        manifest.pods.insert("pod".to_string(), pod);
 
         let docker_compose = generate_docker_compose(manifest)?;
         let service = docker_compose.services.get("pod-service").unwrap();

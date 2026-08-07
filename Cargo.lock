@@ -932,6 +932,7 @@ version = "0.1.0"
 dependencies = [
  "catalog",
  "clap",
+ "cosmos-keys",
  "eyre",
  "runtime-docker-compose",
  "serde",
@@ -1107,7 +1108,6 @@ name = "catalog-berachain"
 version = "0.1.0"
 dependencies = [
  "eyre",
- "getrandom 0.2.16",
  "serde",
  "serde_json",
  "spec",
@@ -1120,7 +1120,6 @@ name = "catalog-ethereum"
 version = "0.1.0"
 dependencies = [
  "eyre",
- "getrandom 0.2.16",
  "serde",
  "serde_json",
  "spec",
@@ -1132,9 +1131,7 @@ dependencies = [
 name = "catalog-polygon"
 version = "0.1.0"
 dependencies = [
- "cosmos-keys",
  "eyre",
- "getrandom 0.2.16",
  "serde",
  "serde_json",
  "spec",
@@ -1147,7 +1144,6 @@ name = "catalog-tempo"
 version = "0.1.0"
 dependencies = [
  "eyre",
- "getrandom 0.2.16",
  "serde",
  "spec",
 ]

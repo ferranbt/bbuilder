@@ -55,32 +55,17 @@ pub struct ChainSpec<Chains: Default> {
 }
 
 #[derive(Clone, Serialize, Deserialize)]
-pub struct Manifest {
+pub struct Manifest<S = Source> {
     pub name: String,
-    pub pods: HashMap<String, Pod>,
+    pub pods: HashMap<String, Pod<S>>,
 }
 
-impl Manifest {
+impl<S> Manifest<S> {
     pub fn new(name: String) -> Self {
         Manifest {
             name,
             pods: HashMap::new(),
         }
-    }
-
-    pub fn add_spec(&mut self, name: String, mut pod: Pod) {
-        let mut new_specs = Vec::new();
-        for (spec_name, spec) in &pod.specs {
-            if let Some(babel) = spec.get_babel() {
-                let babel_spec = babel.spec();
-                let babel_name = format!("{}-babel", spec_name);
-                new_specs.push((babel_name, babel_spec));
-            }
-        }
-        for (babel_name, babel_spec) in new_specs {
-            pod.specs.insert(babel_name, babel_spec);
-        }
-        self.pods.insert(name, pod);
     }
 
     pub fn resolve_ref(&self, name: String, port: String) -> eyre::Result<String> {
@@ -108,9 +93,26 @@ impl Manifest {
     }
 }
 
+impl Manifest<Source> {
+    pub fn add_spec(&mut self, name: String, mut pod: Pod) {
+        let mut new_specs = Vec::new();
+        for (spec_name, spec) in &pod.specs {
+            if let Some(babel) = spec.get_babel() {
+                let babel_spec = babel.spec();
+                let babel_name = format!("{}-babel", spec_name);
+                new_specs.push((babel_name, babel_spec));
+            }
+        }
+        for (babel_name, babel_spec) in new_specs {
+            pod.specs.insert(babel_name, babel_spec);
+        }
+        self.pods.insert(name, pod);
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub enum Artifacts {
-    File(File),
+pub enum Artifacts<S = Source> {
+    File(File<S>),
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -118,7 +120,6 @@ pub enum Arg {
     Port { name: String, preferred: u16 },
     Dir { name: String, path: String },
     Ref { name: String, port: String },
-    File(File),
     Value(String),
 }
 
@@ -129,10 +130,92 @@ pub struct Dir {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct File {
+pub struct File<S = Source> {
     pub name: String,
     pub target_path: String,
-    pub content: String,
+    pub source: S,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum Source {
+    Inline(String),
+    Remote {
+        url: String,
+        checksum: Option<String>,
+    },
+    Generated(Generated),
+    Jwt,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ResolvedSource {
+    Inline(String),
+    Remote {
+        url: String,
+        checksum: Option<String>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Generated {
+    Ed25519TendermintNodeKey,
+    Secp256k1CometBftValidatorKey,
+}
+
+impl File<Source> {
+    pub fn inline(
+        name: impl Into<String>,
+        target_path: impl Into<String>,
+        content: impl Into<String>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            target_path: target_path.into(),
+            source: Source::Inline(content.into()),
+        }
+    }
+
+    pub fn remote(
+        name: impl Into<String>,
+        target_path: impl Into<String>,
+        url: impl Into<String>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            target_path: target_path.into(),
+            source: Source::Remote {
+                url: url.into(),
+                checksum: None,
+            },
+        }
+    }
+
+    pub fn generated(
+        name: impl Into<String>,
+        target_path: impl Into<String>,
+        generated: Generated,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            target_path: target_path.into(),
+            source: Source::Generated(generated),
+        }
+    }
+
+    pub fn jwt(name: impl Into<String>, target_path: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            target_path: target_path.into(),
+            source: Source::Jwt,
+        }
+    }
+
+    pub fn with_checksum(mut self, value: impl Into<String>) -> Self {
+        if let Source::Remote { checksum, .. } = &mut self.source {
+            *checksum = Some(value.into());
+        }
+        self
+    }
 }
 
 #[macro_export]
@@ -193,13 +276,21 @@ impl From<&PathBuf> for Arg {
     }
 }
 
-#[derive(Default, Debug, Clone, Deserialize, Serialize)]
-pub struct Pod {
-    pub specs: HashMap<String, Spec>,
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct Pod<S = Source> {
+    pub specs: HashMap<String, Spec<S>>,
 }
 
-impl Pod {
-    pub fn with_spec(mut self, name: &str, spec: impl Into<Spec>) -> Self {
+impl<S> Default for Pod<S> {
+    fn default() -> Self {
+        Self {
+            specs: HashMap::new(),
+        }
+    }
+}
+
+impl<S> Pod<S> {
+    pub fn with_spec(mut self, name: &str, spec: impl Into<Spec<S>>) -> Self {
         self.specs.insert(name.to_string(), spec.into());
         self
     }
@@ -212,37 +303,54 @@ pub struct Port {
 }
 
 #[derive(Default, Debug, Clone, Deserialize, Serialize)]
-pub struct Spec {
+pub struct Spec<S = Source> {
     pub image: String,
     pub tag: Option<String>,
     pub args: Vec<Arg>,
     pub entrypoint: Vec<String>,
     pub labels: HashMap<String, String>,
     pub env: HashMap<String, String>,
-    pub artifacts: Vec<Artifacts>,
+    pub artifacts: Vec<Artifacts<S>>,
     pub ports: Vec<Port>,
     pub volumes: Vec<Volume>,
     pub platform: Option<Platform>,
     pub extensions: HashMap<String, serde_json::Value>,
 }
 
-#[derive(Default)]
-pub struct SpecBuilder {
+pub struct SpecBuilder<S = Source> {
     image: Option<String>,
     tag: Option<String>,
     args: Vec<Arg>,
     env: HashMap<String, String>,
     entrypoint: Vec<String>,
     labels: HashMap<String, String>,
-    artifacts: Vec<Artifacts>,
+    artifacts: Vec<Artifacts<S>>,
     ports: Vec<Port>,
     volumes: Vec<Volume>,
     extensions: HashMap<String, serde_json::Value>,
     platform: Option<Platform>,
 }
 
-impl Spec {
-    pub fn builder() -> SpecBuilder {
+impl<S> Default for SpecBuilder<S> {
+    fn default() -> Self {
+        Self {
+            image: None,
+            tag: None,
+            args: Vec::new(),
+            env: HashMap::new(),
+            entrypoint: Vec::new(),
+            labels: HashMap::new(),
+            artifacts: Vec::new(),
+            ports: Vec::new(),
+            volumes: Vec::new(),
+            extensions: HashMap::new(),
+            platform: None,
+        }
+    }
+}
+
+impl<S> Spec<S> {
+    pub fn builder() -> SpecBuilder<S> {
         SpecBuilder::default()
     }
 }
@@ -252,13 +360,13 @@ pub enum Platform {
     LinuxAmd64,
 }
 
-impl SpecBuilder {
-    pub fn image<S: Into<String>>(mut self, image: S) -> Self {
+impl<S> SpecBuilder<S> {
+    pub fn image<T: Into<String>>(mut self, image: T) -> Self {
         self.image = Some(image.into());
         self
     }
 
-    pub fn tag<S: Into<String>>(mut self, tag: S) -> Self {
+    pub fn tag<T: Into<String>>(mut self, tag: T) -> Self {
         self.tag = Some(tag.into());
         self
     }
@@ -310,7 +418,7 @@ impl SpecBuilder {
         self
     }
 
-    pub fn artifact(mut self, artifact: Artifacts) -> Self {
+    pub fn artifact(mut self, artifact: Artifacts<S>) -> Self {
         self.artifacts.push(artifact);
         self
     }
@@ -349,7 +457,7 @@ impl SpecBuilder {
         }
     }
 
-    pub fn build(self) -> Spec {
+    pub fn build(self) -> Spec<S> {
         let mut ports = self.ports;
 
         for arg in &self.args {
@@ -377,8 +485,8 @@ impl SpecBuilder {
     }
 }
 
-impl Into<Spec> for SpecBuilder {
-    fn into(self) -> Spec {
+impl<S> Into<Spec<S>> for SpecBuilder<S> {
+    fn into(self) -> Spec<S> {
         self.build()
     }
 }
@@ -418,7 +526,7 @@ pub trait DeploymentExtension {
     fn get_babel(&self) -> Option<Babel>;
 }
 
-impl DeploymentExtension for SpecBuilder {
+impl<S> DeploymentExtension for SpecBuilder<S> {
     fn min_version(self, version: String) -> Self {
         self.extension("min_version", serde_json::Value::String(version))
     }
@@ -432,7 +540,7 @@ impl DeploymentExtension for SpecBuilder {
     }
 }
 
-impl DeploymentExtension for Spec {
+impl<S> DeploymentExtension for Spec<S> {
     fn min_version(self, _version: String) -> Self {
         self
     }
@@ -446,7 +554,7 @@ impl DeploymentExtension for Spec {
     }
 }
 
-impl Spec {
+impl<S> Spec<S> {
     pub fn get_extension<R: serde::de::DeserializeOwned>(
         &self,
         name: String,
@@ -464,7 +572,7 @@ mod tests {
 
     #[test]
     fn test_arg_port_populates_ports() {
-        let spec = Spec::builder()
+        let spec: Spec = Spec::builder()
             .image("test-image")
             .arg(Arg::Port {
                 name: "http".to_string(),
@@ -485,7 +593,7 @@ mod tests {
 
     #[test]
     fn test_arg_port_with_existing_ports() {
-        let spec = Spec::builder()
+        let spec: Spec = Spec::builder()
             .image("test-image")
             .port(Port {
                 port: 3000,

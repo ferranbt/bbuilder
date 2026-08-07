@@ -73,6 +73,10 @@ async fn run_command(
     let manifest_path = manifest_dir.join("manifest.json");
     fs::write(&manifest_path, serde_json::to_string_pretty(&manifest)?)?;
 
+    // Mint secrets and inline them, so runtimes only ever see content or a URL
+    let secrets_dir = std::path::Path::new(&config_folder).join("secrets");
+    let manifest = bbuilder::generator::generate(manifest, &secrets_dir)?;
+
     // Pass ./bbuilder/docker-runtime to DockerRuntime
     let docker_runtime_path = std::path::Path::new(&config_folder)
         .join("docker-runtime")

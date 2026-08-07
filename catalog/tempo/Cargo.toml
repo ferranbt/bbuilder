@@ -7,7 +7,6 @@ edition = "2024"
 serde.workspace = true
 spec.workspace = true
 eyre.workspace = true
-getrandom.workspace = true
 
 [lib]
 path = "lib.rs"
